@@ -1,0 +1,320 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ──────────────────────────────────────────────
+// AUTH
+// ──────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          UserRole  @default(VIEWER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ──────────────────────────────────────────────
+// BRANDS
+// ──────────────────────────────────────────────
+
+model Brand {
+  id           String        @id @default(cuid())
+  name         String
+  slug         String        @unique
+  domain       String        @unique
+  logoUrl      String?
+  country      String?
+  category     BrandCategory @default(COMPETITOR)
+  isMyBrand    Boolean       @default(false)
+  isActive     Boolean       @default(true)
+  shopifyStore Boolean       @default(false)
+  currency     String        @default("USD")
+  tags         String[]      @default([])
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products       Product[]
+  scrapeJobs     ScrapeJob[]
+  salesEstimates SalesEstimate[]
+  alerts         BrandAlert[]
+  ownSalesData   OwnSalesData[]
+
+  @@index([country])
+  @@index([category])
+  @@index([isActive])
+}
+
+enum BrandCategory {
+  COMPETITOR
+  ASPIRATIONAL
+  INTERNATIONAL
+  ADJACENT
+  MY_BRAND
+}
+
+// ──────────────────────────────────────────────
+// PRODUCTS & VARIANTS (SKUs)
+// ──────────────────────────────────────────────
+
+model Product {
+  id           String    @id @default(cuid())
+  brandId      String
+  externalId   String
+  title        String
+  handle       String
+  productType  String?
+  tags         String[]  @default([])
+  vendor       String?
+  imageUrl     String?
+  imageUrls    String[]  @default([])
+  bodyHtml     String?   @db.Text
+  publishedAt  DateTime?
+  firstSeenAt  DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  isActive     Boolean   @default(true)
+  isLaunch     Boolean   @default(false)
+  launchDate   DateTime?
+
+  brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  variants Variant[]
+
+  @@unique([brandId, externalId])
+  @@index([brandId])
+  @@index([productType])
+  @@index([isLaunch])
+  @@index([launchDate])
+  @@index([firstSeenAt])
+}
+
+model Variant {
+  id             String   @id @default(cuid())
+  productId      String
+  externalId     String
+  title          String
+  sku            String?
+  option1        String?
+  option2        String?
+  option3        String?
+  price          Decimal  @db.Decimal(10, 2)
+  compareAtPrice Decimal? @db.Decimal(10, 2)
+  isAvailable    Boolean  @default(true)
+  weight         Decimal? @db.Decimal(10, 2)
+  weightUnit     String?
+
+  product            Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventorySnapshots InventorySnapshot[]
+  priceHistory       PriceHistory[]
+  salesEstimates     SalesEstimate[]
+
+  @@unique([productId, externalId])
+  @@index([productId])
+  @@index([sku])
+}
+
+// ──────────────────────────────────────────────
+// INVENTORY SNAPSHOTS
+// ──────────────────────────────────────────────
+
+model InventorySnapshot {
+  id          String   @id @default(cuid())
+  variantId   String
+  quantity    Int
+  isAvailable Boolean
+  snapshotAt  DateTime @default(now())
+
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId, snapshotAt])
+  @@index([snapshotAt])
+}
+
+// ──────────────────────────────────────────────
+// PRICE HISTORY
+// ──────────────────────────────────────────────
+
+model PriceHistory {
+  id             String   @id @default(cuid())
+  variantId      String
+  price          Decimal  @db.Decimal(10, 2)
+  compareAtPrice Decimal? @db.Decimal(10, 2)
+  recordedAt     DateTime @default(now())
+
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId, recordedAt])
+}
+
+// ──────────────────────────────────────────────
+// SALES ESTIMATES
+// ──────────────────────────────────────────────
+
+model SalesEstimate {
+  id              String   @id @default(cuid())
+  brandId         String
+  variantId       String
+  date            DateTime @db.Date
+  unitsSold       Int
+  revenueEstimate Decimal  @db.Decimal(12, 2)
+  wasRestock      Boolean  @default(false)
+
+  brand   Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, date])
+  @@index([brandId, date])
+  @@index([date])
+}
+
+// ──────────────────────────────────────────────
+// OWN SALES DATA (benchmark)
+// ──────────────────────────────────────────────
+
+model OwnSalesData {
+  id      String   @id @default(cuid())
+  brandId String
+  sku     String
+  date    DateTime @db.Date
+  units   Int
+  revenue Decimal  @db.Decimal(12, 2)
+  source  String   @default("csv")
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, sku, date])
+  @@index([brandId, date])
+}
+
+// ──────────────────────────────────────────────
+// SCRAPE JOBS
+// ──────────────────────────────────────────────
+
+model ScrapeJob {
+  id            String       @id @default(cuid())
+  brandId       String
+  type          ScrapeType
+  status        ScrapeStatus @default(PENDING)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  error         String?      @db.Text
+  productsFound Int          @default(0)
+  variantsFound Int          @default(0)
+  createdAt     DateTime     @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum ScrapeType {
+  SHOPIFY_FULL
+  SHOPIFY_INCREMENTAL
+  PLAYWRIGHT
+  RAINFOREST
+  MANUAL
+}
+
+enum ScrapeStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ──────────────────────────────────────────────
+// ALERTS
+// ──────────────────────────────────────────────
+
+model BrandAlert {
+  id        String    @id @default(cuid())
+  brandId   String
+  type      AlertType
+  threshold Float?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  brand  Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  events AlertEvent[]
+
+  @@index([brandId])
+}
+
+model AlertEvent {
+  id          String   @id @default(cuid())
+  alertId     String
+  message     String
+  data        Json?
+  triggeredAt DateTime @default(now())
+  isRead      Boolean  @default(false)
+
+  alert BrandAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([alertId])
+  @@index([isRead])
+  @@index([triggeredAt])
+}
+
+enum AlertType {
+  NEW_PRODUCTS
+  PRICE_CHANGE
+  PRICE_DROP
+  RESTOCK
+  HIGH_VELOCITY
+}
