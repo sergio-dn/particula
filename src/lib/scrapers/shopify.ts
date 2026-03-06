@@ -26,7 +26,7 @@ export interface ShopifyProduct {
   handle: string
   product_type: string
   vendor: string
-  tags: string
+  tags: string | string[]
   body_html: string
   published_at: string
   images: Array<{ src: string }>

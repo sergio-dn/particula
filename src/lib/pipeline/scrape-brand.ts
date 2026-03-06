@@ -165,7 +165,11 @@ async function processShopifyBrand(brandId: string, domain: string) {
         title: sp.title,
         handle: sp.handle,
         productType: sp.product_type || null,
-        tags: sp.tags ? sp.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+        tags: Array.isArray(sp.tags)
+          ? sp.tags.map((t) => t.trim()).filter(Boolean)
+          : typeof sp.tags === "string"
+            ? sp.tags.split(",").map((t) => t.trim()).filter(Boolean)
+            : [],
         vendor: sp.vendor || null,
         imageUrl: sp.images?.[0]?.src ?? null,
         imageUrls: sp.images?.map((i) => i.src) ?? [],
@@ -181,7 +185,11 @@ async function processShopifyBrand(brandId: string, domain: string) {
         title: sp.title,
         handle: sp.handle,
         productType: sp.product_type || null,
-        tags: sp.tags ? sp.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+        tags: Array.isArray(sp.tags)
+          ? sp.tags.map((t) => t.trim()).filter(Boolean)
+          : typeof sp.tags === "string"
+            ? sp.tags.split(",").map((t) => t.trim()).filter(Boolean)
+            : [],
         vendor: sp.vendor || null,
         imageUrl: sp.images?.[0]?.src ?? null,
         imageUrls: sp.images?.map((i) => i.src) ?? [],
