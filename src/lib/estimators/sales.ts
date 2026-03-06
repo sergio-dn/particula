@@ -12,20 +12,19 @@
 import { prisma } from "@/lib/prisma"
 
 /**
- * Calcula y guarda las estimaciones de ventas para un día específico,
- * comparando los dos últimos snapshots de cada variante.
+ * Calcula y guarda las estimaciones de ventas para una marca,
+ * comparando los dos snapshots más recientes de cada variante.
+ *
+ * Usar los 2 snapshots más recientes (en vez de ventana de día fijo)
+ * hace que funcione correctamente cuando:
+ * - Se hacen dos scrapes el mismo día (testing)
+ * - El schedule de scraping varía (cada 6h, cada 12h, etc.)
  */
 export async function computeDailySalesEstimates(brandId: string, date: Date): Promise<number> {
   const dayStart = new Date(date)
   dayStart.setHours(0, 0, 0, 0)
 
-  const dayEnd = new Date(date)
-  dayEnd.setHours(23, 59, 59, 999)
-
-  const previousDay = new Date(dayStart)
-  previousDay.setDate(previousDay.getDate() - 1)
-
-  // Obtener los últimos snapshots del día anterior y del día actual
+  // Obtener los 2 snapshots más recientes por variante
   const variants = await prisma.variant.findMany({
     where: { product: { brandId } },
     select: {
@@ -33,10 +32,7 @@ export async function computeDailySalesEstimates(brandId: string, date: Date): P
       price: true,
       product: { select: { brandId: true } },
       inventorySnapshots: {
-        where: {
-          snapshotAt: { gte: previousDay, lt: dayEnd },
-        },
-        orderBy: { snapshotAt: "asc" },
+        orderBy: { snapshotAt: "desc" },
         take: 2,
       },
     },
@@ -48,13 +44,14 @@ export async function computeDailySalesEstimates(brandId: string, date: Date): P
     const snapshots = variant.inventorySnapshots
     if (snapshots.length < 2) continue
 
-    const prev = snapshots[0]
-    const curr = snapshots[snapshots.length - 1]
+    const curr = snapshots[0]  // más reciente
+    const prev = snapshots[1]  // anterior
 
     const delta = prev.quantity - curr.quantity
     const wasRestock = delta < 0
 
-    if (delta <= 0 && !wasRestock) continue // sin cambio
+    // Si no hubo cambio, saltar
+    if (delta === 0) continue
 
     const unitsSold = Math.max(0, delta)
     const revenueEstimate = unitsSold * Number(variant.price)

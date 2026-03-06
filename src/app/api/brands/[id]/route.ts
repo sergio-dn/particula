@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
+import { after } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { enqueueScrapeJob } from "@/lib/jobs/queue"
+import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
 
 const updateBrandSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -71,13 +72,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
 
-  if (brand.shopifyStore) {
-    await enqueueScrapeJob({
-      brandId: brand.id,
-      domain: brand.domain,
-      type: "SHOPIFY_FULL",
-    })
-  }
+  // Ejecutar scraping en background
+  after(async () => {
+    await scrapeBrand(brand.id)
+  })
 
   return NextResponse.json({ scrapeJobId: scrapeJob.id })
 }

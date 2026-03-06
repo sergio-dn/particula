@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { after } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { enqueueScrapeJob } from "@/lib/jobs/queue"
+import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
 
 export async function POST(
   _req: NextRequest,
@@ -18,13 +19,10 @@ export async function POST(
     },
   })
 
-  if (brand.shopifyStore) {
-    await enqueueScrapeJob({
-      brandId: brand.id,
-      domain: brand.domain,
-      type: "SHOPIFY_FULL",
-    })
-  }
+  // Ejecutar scraping en background
+  after(async () => {
+    await scrapeBrand(brand.id)
+  })
 
   return NextResponse.json({ scrapeJobId: scrapeJob.id })
 }

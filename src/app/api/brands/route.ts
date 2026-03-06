@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
+import { after } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { detectShopifyStore } from "@/lib/scrapers/shopify"
-import { enqueueScrapeJob } from "@/lib/jobs/queue"
+import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
+import { createDefaultAlerts } from "@/lib/pipeline/alerts"
 
 const createBrandSchema = z.object({
   name: z.string().min(1).max(100),
@@ -82,6 +84,9 @@ export async function POST(req: NextRequest) {
     },
   })
 
+  // Crear alertas por defecto
+  await createDefaultAlerts(brand.id)
+
   // Registrar el scrape job en DB
   const scrapeJob = await prisma.scrapeJob.create({
     data: {
@@ -91,12 +96,10 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // Encolar scraping inicial
+  // Ejecutar scraping en background (no bloquea la respuesta)
   if (isShopify) {
-    await enqueueScrapeJob({
-      brandId: brand.id,
-      domain: cleanDomain,
-      type: "SHOPIFY_FULL",
+    after(async () => {
+      await scrapeBrand(brand.id)
     })
   }
 
