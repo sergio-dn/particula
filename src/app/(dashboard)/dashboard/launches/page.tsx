@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Rocket } from "lucide-react"
 import Link from "next/link"
+import { formatPrice } from "@/lib/utils"
 
 interface SearchParams {
   brandId?: string
@@ -26,7 +27,7 @@ async function getLaunches(params: SearchParams) {
     orderBy: { launchDate: "desc" },
     take: 100,
     include: {
-      brand: { select: { name: true, domain: true, country: true, category: true } },
+      brand: { select: { name: true, domain: true, country: true, category: true, currency: true } },
       variants: {
         take: 1,
         select: { price: true, compareAtPrice: true },
@@ -161,12 +162,12 @@ export default async function LaunchesPage({
                       <div className="flex items-center gap-2">
                         {minPrice && (
                           <span className="text-sm font-medium">
-                            ${Number(minPrice).toFixed(2)}
+                            {formatPrice(minPrice, product.brand.currency)}
                           </span>
                         )}
                         {compareAt && Number(compareAt) > Number(minPrice) && (
                           <span className="text-xs text-muted-foreground line-through">
-                            ${Number(compareAt).toFixed(2)}
+                            {formatPrice(compareAt, product.brand.currency)}
                           </span>
                         )}
                       </div>

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tag } from "lucide-react"
+import { formatPrice } from "@/lib/utils"
 
 async function getPriceChanges() {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
@@ -19,7 +20,7 @@ async function getPriceChanges() {
               title: true,
               imageUrl: true,
               productType: true,
-              brand: { select: { name: true } },
+              brand: { select: { name: true, currency: true } },
             },
           },
         },
@@ -44,7 +45,7 @@ async function getDiscountedProducts() {
         select: {
           title: true,
           imageUrl: true,
-          brand: { select: { name: true } },
+          brand: { select: { name: true, currency: true } },
         },
       },
     },
@@ -104,10 +105,10 @@ export default async function PricingPage() {
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-semibold">${Number(change.price).toFixed(2)}</p>
+                      <p className="text-sm font-semibold">{formatPrice(change.price, change.variant.product.brand.currency)}</p>
                       {change.compareAtPrice && (
                         <p className="text-xs text-muted-foreground line-through">
-                          ${Number(change.compareAtPrice).toFixed(2)}
+                          {formatPrice(change.compareAtPrice, change.variant.product.brand.currency)}
                         </p>
                       )}
                     </div>
@@ -164,10 +165,10 @@ export default async function PricingPage() {
                         </Badge>
                         <div className="text-right">
                           <p className="text-sm font-semibold">
-                            ${Number(variant.price).toFixed(2)}
+                            {formatPrice(variant.price, variant.product.brand.currency)}
                           </p>
                           <p className="text-xs text-muted-foreground line-through">
-                            ${Number(variant.compareAtPrice).toFixed(2)}
+                            {formatPrice(variant.compareAtPrice, variant.product.brand.currency)}
                           </p>
                         </div>
                       </div>

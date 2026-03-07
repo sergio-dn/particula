@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TopSellersFilters } from "./top-sellers-filters"
+import { formatPrice } from "@/lib/utils"
 
 interface SearchParams {
   brandId?: string
@@ -37,7 +38,7 @@ async function getTopSellers(params: SearchParams) {
           imageUrl: true,
           productType: true,
           handle: true,
-          brand: { select: { name: true, domain: true, id: true } },
+          brand: { select: { name: true, domain: true, id: true, currency: true } },
         },
       },
     },
@@ -162,7 +163,7 @@ export default async function TopSellersPage({
                   {/* Metrics */}
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-semibold">
-                      ${item.revenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                      {formatPrice(item.revenue, item.variant.product.brand.currency)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {item.unitsSold.toLocaleString()} uds
@@ -172,7 +173,7 @@ export default async function TopSellersPage({
                   {/* Price */}
                   <div className="text-right flex-shrink-0 hidden md:block">
                     <p className="text-sm text-muted-foreground">
-                      ${Number(item.variant.price).toFixed(2)}
+                      {formatPrice(item.variant.price, item.variant.product.brand.currency)}
                     </p>
                   </div>
                 </div>

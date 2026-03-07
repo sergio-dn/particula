@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { formatPrice, formatPriceCompact } from "@/lib/utils"
 
 // Paleta de colores para las líneas de cada marca
 const BRAND_COLORS = [
@@ -41,6 +42,7 @@ interface Brand {
   name: string
   isMyBrand: boolean
   category: string
+  currency: string
 }
 
 interface Props {
@@ -194,19 +196,23 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days }: 
                 />
                 <YAxis
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) =>
-                    metric === "revenue"
-                      ? `$${(v / 1000).toFixed(0)}k`
-                      : v.toLocaleString()
-                  }
+                  tickFormatter={(v) => {
+                    if (metric !== "revenue") return v.toLocaleString()
+                    const curr = brands[0]?.currency ?? "USD"
+                    return formatPriceCompact(v, curr)
+                  }}
                 />
                 <Tooltip
-                  formatter={(value, name) => [
-                    metric === "revenue"
-                      ? `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-                      : Number(value).toLocaleString(),
-                    name,
-                  ]}
+                  formatter={(value, name) => {
+                    const brand = brands.find((b) => b.name === name)
+                    const curr = brand?.currency ?? "USD"
+                    return [
+                      metric === "revenue"
+                        ? formatPrice(Number(value), curr)
+                        : Number(value).toLocaleString(),
+                      name,
+                    ]
+                  }}
                   labelFormatter={(label) =>
                     format(new Date(label), "d 'de' MMMM yyyy", { locale: es })
                   }
@@ -251,7 +257,7 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days }: 
                     )}
                     <div className="text-right">
                       <p className="text-sm font-semibold">
-                        ${item!.totalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                        {formatPrice(item!.totalRevenue, item!.brand.currency)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {item!.totalUnits.toLocaleString()} uds

@@ -32,7 +32,7 @@ async function getBrands() {
   return prisma.brand.findMany({
     where: { isActive: true },
     orderBy: [{ isMyBrand: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, isMyBrand: true, category: true },
+    select: { id: true, name: true, isMyBrand: true, category: true, currency: true },
   })
 }
 
