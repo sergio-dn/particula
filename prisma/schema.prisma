@@ -81,9 +81,12 @@ model Brand {
   category     BrandCategory @default(COMPETITOR)
   isMyBrand    Boolean       @default(false)
   isActive     Boolean       @default(true)
-  shopifyStore Boolean       @default(false)
-  currency     String        @default("USD")
-  tags         String[]      @default([])
+  shopifyStore         Boolean       @default(false)
+  platformType         String?
+  platformConfidence   Float?
+  platformSignals      Json?
+  currency             String        @default("USD")
+  tags                 String[]      @default([])
   notes        String?
 
   createdAt DateTime @default(now())

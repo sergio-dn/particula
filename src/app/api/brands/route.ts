@@ -3,6 +3,7 @@ import { after } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { detectShopifyStore } from "@/lib/scrapers/shopify"
+import { detectPlatform } from "@/lib/detectors/platform-detector"
 import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
 import { createDefaultAlerts } from "@/lib/pipeline/alerts"
 
@@ -64,8 +65,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Esta marca ya está siendo trackeada" }, { status: 409 })
   }
 
-  // Auto-detectar si es Shopify
-  const isShopify = await detectShopifyStore(cleanDomain)
+  // Detectar plataforma ecommerce
+  const detection = await detectPlatform(cleanDomain)
+  const isShopify = detection.platform === "SHOPIFY" && detection.confidence >= 0.5
+
+  // Fallback: si no se detectó Shopify por señales HTML pero el endpoint responde
+  const shopifyConfirmed = isShopify || await detectShopifyStore(cleanDomain)
 
   // Generar slug
   const slug = cleanDomain.replace(/\./g, "-").replace(/[^a-z0-9-]/g, "")
@@ -78,7 +83,10 @@ export async function POST(req: NextRequest) {
       country: country?.toUpperCase() ?? null,
       category,
       isMyBrand,
-      shopifyStore: isShopify,
+      shopifyStore: shopifyConfirmed,
+      platformType: detection.platform,
+      platformConfidence: detection.confidence,
+      platformSignals: detection.signals as never,
       notes: notes ?? null,
       isActive: true,
     },
@@ -91,20 +99,25 @@ export async function POST(req: NextRequest) {
   const scrapeJob = await prisma.scrapeJob.create({
     data: {
       brandId: brand.id,
-      type: isShopify ? "SHOPIFY_FULL" : "PLAYWRIGHT",
+      type: shopifyConfirmed ? "SHOPIFY_FULL" : "PLAYWRIGHT",
       status: "PENDING",
     },
   })
 
   // Ejecutar scraping en background (no bloquea la respuesta)
-  if (isShopify) {
+  if (shopifyConfirmed) {
     after(async () => {
       await scrapeBrand(brand.id)
     })
   }
 
   return NextResponse.json(
-    { ...brand, scrapeJobId: scrapeJob.id, shopifyDetected: isShopify },
+    {
+      ...brand,
+      scrapeJobId: scrapeJob.id,
+      shopifyDetected: shopifyConfirmed,
+      platformDetection: detection,
+    },
     { status: 201 }
   )
 }
