@@ -3,11 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TopSellersFilters } from "./top-sellers-filters"
 import { formatPrice } from "@/lib/utils"
+import { batchConvert } from "@/lib/exchange"
 
 interface SearchParams {
   brandId?: string
   productType?: string
   days?: string
+  displayCurrency?: string
 }
 
 async function getTopSellers(params: SearchParams) {
@@ -46,15 +48,8 @@ async function getTopSellers(params: SearchParams) {
 
   const variantMap = new Map(variants.map((v) => [v.id, v]))
 
-  type Item = {
-    variantId: string
-    unitsSold: number
-    revenue: number
-    variant: (typeof variants)[number]
-  }
-
   return estimates
-    .map((e): Item | null => {
+    .map((e) => {
       const variant = variantMap.get(e.variantId)
       if (!variant) return null
       return {
@@ -64,7 +59,7 @@ async function getTopSellers(params: SearchParams) {
         variant,
       }
     })
-    .filter((x): x is Item => x !== null)
+    .filter((x): x is NonNullable<typeof x> => x !== null)
 }
 
 async function getBrands() {
@@ -91,11 +86,29 @@ export default async function TopSellersPage({
   searchParams: Promise<SearchParams>
 }) {
   const sp = await searchParams
+  const displayCurrency = sp.displayCurrency ?? "USD"
+
   const [topSellers, brands, productTypes] = await Promise.all([
     getTopSellers(sp),
     getBrands(),
     getProductTypes(),
   ])
+
+  // Convertir revenues a la moneda de visualización
+  const conversionInputs = topSellers.map((item) => ({
+    amount: item.revenue,
+    currency: item.variant.product.brand.currency ?? "USD",
+  }))
+
+  const converted = await batchConvert(conversionInputs, displayCurrency)
+
+  const enrichedItems = topSellers
+    .map((item, i) => ({
+      ...item,
+      convertedRevenue: converted[i].converted,
+      hasRate: converted[i].hasRate,
+    }))
+    .sort((a, b) => b.convertedRevenue - a.convertedRevenue)
 
   return (
     <div className="space-y-6">
@@ -108,7 +121,7 @@ export default async function TopSellersPage({
 
       <TopSellersFilters brands={brands} productTypes={productTypes} />
 
-      {topSellers.length === 0 ? (
+      {enrichedItems.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">
             <p className="text-muted-foreground">
@@ -120,12 +133,17 @@ export default async function TopSellersPage({
         <Card>
           <CardHeader className="pb-0">
             <CardTitle className="text-base">
-              {topSellers.length} SKUs · {sp.days ?? "30"} días
+              {enrichedItems.length} SKUs · {sp.days ?? "30"} días
+              {displayCurrency !== "USD" && (
+                <Badge variant="outline" className="ml-2 text-[10px]">
+                  en {displayCurrency}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-4">
             <div className="divide-y">
-              {topSellers.map((item, i) => (
+              {enrichedItems.map((item, i) => (
                 <div key={item.variantId} className="flex items-center gap-4 py-3">
                   {/* Rank */}
                   <span className="text-sm font-mono text-muted-foreground w-6 text-right">
@@ -160,17 +178,17 @@ export default async function TopSellersPage({
                     </div>
                   </div>
 
-                  {/* Metrics */}
+                  {/* Metrics — converted */}
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-semibold">
-                      {formatPrice(item.revenue, item.variant.product.brand.currency)}
+                      {formatPrice(item.convertedRevenue, displayCurrency)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {item.unitsSold.toLocaleString()} uds
                     </p>
                   </div>
 
-                  {/* Price */}
+                  {/* Price — original currency */}
                   <div className="text-right flex-shrink-0 hidden md:block">
                     <p className="text-sm text-muted-foreground">
                       {formatPrice(item.variant.price, item.variant.product.brand.currency)}

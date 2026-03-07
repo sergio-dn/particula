@@ -2,6 +2,8 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { SUPPORTED_CURRENCIES } from "@/lib/exchange/currencies"
+import { useDisplayCurrency } from "@/hooks/use-display-currency"
 
 interface Props {
   brands: { id: string; name: string }[]
@@ -11,6 +13,7 @@ interface Props {
 export function TopSellersFilters({ brands, productTypes }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { displayCurrency, setDisplayCurrency } = useDisplayCurrency()
 
   function updateParam(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -19,6 +22,13 @@ export function TopSellersFilters({ brands, productTypes }: Props) {
     } else {
       params.set(key, value)
     }
+    router.push(`/dashboard/top-sellers?${params.toString()}`)
+  }
+
+  function updateCurrency(code: string) {
+    setDisplayCurrency(code)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("displayCurrency", code)
     router.push(`/dashboard/top-sellers?${params.toString()}`)
   }
 
@@ -73,6 +83,22 @@ export function TopSellersFilters({ brands, productTypes }: Props) {
           <SelectItem value="30">30 días</SelectItem>
           <SelectItem value="60">60 días</SelectItem>
           <SelectItem value="90">90 días</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={displayCurrency}
+        onValueChange={updateCurrency}
+      >
+        <SelectTrigger className="w-36">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SUPPORTED_CURRENCIES.map((c) => (
+            <SelectItem key={c.code} value={c.code}>
+              {c.code} {c.symbol}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
     </div>

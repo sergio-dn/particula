@@ -27,6 +27,34 @@ async function main() {
   console.log(`✓ Usuario listo: ${user.email} (id: ${user.id})`)
   console.log(`  Email:    ${email}`)
   console.log(`  Password: ${password}`)
+
+  // Tasas de cambio iniciales (→ USD)
+  const initialRates = [
+    { fromCurrency: "CLP", toCurrency: "USD", rate: 0.00106 },
+    { fromCurrency: "EUR", toCurrency: "USD", rate: 1.08 },
+    { fromCurrency: "GBP", toCurrency: "USD", rate: 1.27 },
+    { fromCurrency: "MXN", toCurrency: "USD", rate: 0.058 },
+    { fromCurrency: "COP", toCurrency: "USD", rate: 0.00024 },
+    { fromCurrency: "BRL", toCurrency: "USD", rate: 0.17 },
+    { fromCurrency: "ARS", toCurrency: "USD", rate: 0.00088 },
+    { fromCurrency: "PEN", toCurrency: "USD", rate: 0.27 },
+    { fromCurrency: "CAD", toCurrency: "USD", rate: 0.74 },
+  ]
+
+  const effectiveDate = new Date("2025-01-01")
+
+  for (const r of initialRates) {
+    const exists = await prisma.exchangeRate.findFirst({
+      where: { fromCurrency: r.fromCurrency, toCurrency: r.toCurrency },
+    })
+    if (!exists) {
+      await prisma.exchangeRate.create({
+        data: { ...r, effectiveDate, source: "seed" },
+      })
+    }
+  }
+
+  console.log(`✓ Tasas de cambio: ${initialRates.length} monedas base`)
 }
 
 main()

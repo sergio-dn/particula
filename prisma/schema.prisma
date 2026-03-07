@@ -318,3 +318,20 @@ enum AlertType {
   RESTOCK
   HIGH_VELOCITY
 }
+
+// ──────────────────────────────────────────────
+// EXCHANGE RATES
+// ──────────────────────────────────────────────
+
+model ExchangeRate {
+  id            String   @id @default(cuid())
+  fromCurrency  String
+  toCurrency    String
+  rate          Decimal  @db.Decimal(18, 8)
+  effectiveDate DateTime @db.Date
+  source        String   @default("manual")
+  createdAt     DateTime @default(now())
+
+  @@index([fromCurrency, toCurrency, effectiveDate])
+  @@index([effectiveDate])
+}

@@ -13,10 +13,13 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { formatPrice, formatPriceCompact } from "@/lib/utils"
+import { SUPPORTED_CURRENCIES } from "@/lib/exchange/currencies"
+import { useDisplayCurrency } from "@/hooks/use-display-currency"
 
 // Paleta de colores para las líneas de cada marca
 const BRAND_COLORS = [
@@ -42,7 +45,6 @@ interface Brand {
   name: string
   isMyBrand: boolean
   category: string
-  currency: string
 }
 
 interface Props {
@@ -50,13 +52,15 @@ interface Props {
   salesData: SalesDataPoint[]
   selectedBrandIds: string[]
   days: number
+  displayCurrency: string
 }
 
 type Metric = "revenue" | "unitsSold"
 
-export function SalesChartClient({ brands, salesData, selectedBrandIds, days }: Props) {
+export function SalesChartClient({ brands, salesData, selectedBrandIds, days, displayCurrency }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { setDisplayCurrency } = useDisplayCurrency()
   const [metric, setMetric] = useState<Metric>("revenue")
   const [activeBrandIds, setActiveBrandIds] = useState<string[]>(selectedBrandIds)
 
@@ -87,6 +91,13 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days }: 
   function setDays(d: string) {
     const params = new URLSearchParams(searchParams.toString())
     params.set("days", d)
+    router.push(`/dashboard/sales?${params.toString()}`)
+  }
+
+  function updateCurrency(code: string) {
+    setDisplayCurrency(code)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("displayCurrency", code)
     router.push(`/dashboard/sales?${params.toString()}`)
   }
 
@@ -123,24 +134,39 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days }: 
           ))}
         </div>
 
-        {/* Metric selector */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setMetric("revenue")}
-            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-              metric === "revenue" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"
-            }`}
-          >
-            Revenue
-          </button>
-          <button
-            onClick={() => setMetric("unitsSold")}
-            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-              metric === "unitsSold" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"
-            }`}
-          >
-            Unidades
-          </button>
+        {/* Metric selector + Currency */}
+        <div className="flex gap-3 items-center">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMetric("revenue")}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                metric === "revenue" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"
+              }`}
+            >
+              Revenue
+            </button>
+            <button
+              onClick={() => setMetric("unitsSold")}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                metric === "unitsSold" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"
+              }`}
+            >
+              Unidades
+            </button>
+          </div>
+
+          <Select value={displayCurrency} onValueChange={updateCurrency}>
+            <SelectTrigger className="w-32 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <SelectItem key={c.code} value={c.code}>
+                  {c.code} {c.symbol}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -196,23 +222,19 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days }: 
                 />
                 <YAxis
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => {
-                    if (metric !== "revenue") return v.toLocaleString()
-                    const curr = brands[0]?.currency ?? "USD"
-                    return formatPriceCompact(v, curr)
-                  }}
+                  tickFormatter={(v) =>
+                    metric === "revenue"
+                      ? formatPriceCompact(v, displayCurrency)
+                      : v.toLocaleString()
+                  }
                 />
                 <Tooltip
-                  formatter={(value, name) => {
-                    const brand = brands.find((b) => b.name === name)
-                    const curr = brand?.currency ?? "USD"
-                    return [
-                      metric === "revenue"
-                        ? formatPrice(Number(value), curr)
-                        : Number(value).toLocaleString(),
-                      name,
-                    ]
-                  }}
+                  formatter={(value, name) => [
+                    metric === "revenue"
+                      ? formatPrice(Number(value), displayCurrency)
+                      : Number(value).toLocaleString(),
+                    name,
+                  ]}
                   labelFormatter={(label) =>
                     format(new Date(label), "d 'de' MMMM yyyy", { locale: es })
                   }
@@ -257,7 +279,7 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days }: 
                     )}
                     <div className="text-right">
                       <p className="text-sm font-semibold">
-                        {formatPrice(item!.totalRevenue, item!.brand.currency)}
+                        {formatPrice(item!.totalRevenue, displayCurrency)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {item!.totalUnits.toLocaleString()} uds

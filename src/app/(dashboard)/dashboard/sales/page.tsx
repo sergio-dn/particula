@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma"
 import { SalesChartClient } from "./sales-chart-client"
+import { batchConvert } from "@/lib/exchange"
 
 interface SearchParams {
   brandIds?: string
   days?: string
+  displayCurrency?: string
 }
 
 async function getSalesCurves(brandIds: string[], days: number) {
@@ -43,6 +45,7 @@ export default async function SalesPage({
 }) {
   const sp = await searchParams
   const days = parseInt(sp.days ?? "30", 10)
+  const displayCurrency = sp.displayCurrency ?? "USD"
 
   const allBrands = await getBrands()
 
@@ -51,6 +54,21 @@ export default async function SalesPage({
     : allBrands.slice(0, 5).map((b) => b.id)
 
   const salesData = await getSalesCurves(selectedBrandIds, days)
+
+  // Convertir revenues a displayCurrency
+  const brandCurrencyMap = new Map(allBrands.map((b) => [b.id, b.currency ?? "USD"]))
+
+  const conversionInputs = salesData.map((d) => ({
+    amount: d.revenue,
+    currency: brandCurrencyMap.get(d.brandId) ?? "USD",
+  }))
+
+  const converted = await batchConvert(conversionInputs, displayCurrency)
+
+  const convertedSalesData = salesData.map((d, i) => ({
+    ...d,
+    revenue: converted[i].converted,
+  }))
 
   return (
     <div className="space-y-6">
@@ -63,9 +81,10 @@ export default async function SalesPage({
 
       <SalesChartClient
         brands={allBrands}
-        salesData={salesData}
+        salesData={convertedSalesData}
         selectedBrandIds={selectedBrandIds}
         days={days}
+        displayCurrency={displayCurrency}
       />
     </div>
   )
