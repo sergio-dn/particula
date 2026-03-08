@@ -19,7 +19,7 @@ import { getAdapter } from "@/lib/scrapers/adapter"
 import type { NormalizedProduct } from "@/lib/scrapers/adapter"
 import type { PlatformType } from "@/lib/detectors/platform-detector"
 import { computeDailySalesEstimates } from "@/lib/estimators/sales"
-import { evaluateAlerts, type ScrapeResults } from "@/lib/pipeline/alerts"
+import { evaluateAlerts, type ScrapeResults, type DiscountChangeDetail } from "@/lib/pipeline/alerts"
 
 export interface ScrapeResult {
   brandId: string
@@ -60,6 +60,11 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
     const newProductIds: string[] = []
     const priceChanges: PriceChangeInfo[] = []
     const restockedVariantIds: string[] = []
+    const newVariantIds: string[] = []
+    const discountStartDetails: DiscountChangeDetail[] = []
+    const discountEndDetails: DiscountChangeDetail[] = []
+    const outOfStockVariantIds: string[] = []
+    const removedProductIds: string[] = []
 
     // Determinar plataforma: usar platformType guardado, o SHOPIFY si shopifyStore es true
     const platformType: PlatformType =
@@ -75,6 +80,28 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
     newProductsCount = result.newProductIds.length
     newProductIds.push(...result.newProductIds)
     priceChanges.push(...result.priceChanges)
+    restockedVariantIds.push(...result.restockedVariantIds)
+    newVariantIds.push(...result.newVariantIds)
+    discountStartDetails.push(...result.discountStartDetails)
+    discountEndDetails.push(...result.discountEndDetails)
+    outOfStockVariantIds.push(...result.outOfStockVariantIds)
+
+    // Detect PRODUCT_REMOVED: products that were active but not in this scrape
+    const scrapedExternalIds = new Set(products.map((p) => p.externalId))
+    const activeProducts = await prisma.product.findMany({
+      where: { brandId, isActive: true },
+      select: { id: true, externalId: true },
+    })
+    for (const ap of activeProducts) {
+      if (!scrapedExternalIds.has(ap.externalId)) {
+        removedProductIds.push(ap.id)
+        // Mark product as inactive
+        await prisma.product.update({
+          where: { id: ap.id },
+          data: { isActive: false },
+        })
+      }
+    }
 
     // Actualizar contadores en el scrape job
     await prisma.scrapeJob.updateMany({
@@ -98,6 +125,11 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
       })),
       restockedVariantIds,
       totalUnitsSold: estimatesCreated, // aproximación — se refina con datos reales
+      newVariantIds,
+      discountStartDetails,
+      discountEndDetails,
+      outOfStockVariantIds,
+      removedProductIds,
     }
     await evaluateAlerts(scrapeResults)
 
@@ -147,6 +179,11 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
 async function processProducts(brandId: string, products: NormalizedProduct[]) {
   const newProductIds: string[] = []
   const priceChanges: PriceChangeInfo[] = []
+  const restockedVariantIds: string[] = []
+  const newVariantIds: string[] = []
+  const discountStartDetails: DiscountChangeDetail[] = []
+  const discountEndDetails: DiscountChangeDetail[] = []
+  const outOfStockVariantIds: string[] = []
   let productsFound = 0
   let variantsFound = 0
 
@@ -156,6 +193,15 @@ async function processProducts(brandId: string, products: NormalizedProduct[]) {
     select: { externalId: true, id: true },
   })
   const existingMap = new Map(existingProducts.map((p: { externalId: string; id: string }) => [p.externalId, p]))
+
+  // Pre-load existing variant externalIds per product to detect new variants
+  const existingVariants = await prisma.variant.findMany({
+    where: { product: { brandId } },
+    select: { externalId: true, productId: true },
+  })
+  const existingVariantSet = new Set(
+    existingVariants.map((v: { externalId: string; productId: string }) => `${v.productId}::${v.externalId}`)
+  )
 
   const now = new Date()
 
@@ -247,6 +293,12 @@ async function processProducts(brandId: string, products: NormalizedProduct[]) {
         },
       })
 
+      // Detect VARIANT_ADDED: variant not previously known for this product
+      const variantKey = `${product.id}::${nv.externalId}`
+      if (!isNewProduct && !existingVariantSet.has(variantKey)) {
+        newVariantIds.push(variant.id)
+      }
+
       // Registrar cambio de precio si cambió
       const lastPrice = await prisma.priceHistory.findFirst({
         where: { variantId: variant.id },
@@ -278,6 +330,44 @@ async function processProducts(brandId: string, products: NormalizedProduct[]) {
             newPrice: Number(nv.price.price),
             productTitle: np.title,
           })
+
+          // Detect DISCOUNT_START: compareAtPrice appeared (was null, now has value)
+          const hadCompareAt = lastPrice.compareAtPrice !== null
+          const hasCompareAt = nv.price.compareAtPrice !== null
+          if (!hadCompareAt && hasCompareAt) {
+            discountStartDetails.push({
+              variantId: variant.id,
+              productTitle: np.title,
+              price: Number(nv.price.price),
+              compareAtPrice: Number(nv.price.compareAtPrice),
+            })
+          }
+
+          // Detect DISCOUNT_END: compareAtPrice disappeared (had value, now null)
+          if (hadCompareAt && !hasCompareAt) {
+            discountEndDetails.push({
+              variantId: variant.id,
+              productTitle: np.title,
+              price: Number(nv.price.price),
+              compareAtPrice: null,
+            })
+          }
+        }
+      }
+
+      // Detect OUT_OF_STOCK and RESTOCK by comparing with previous snapshot
+      const prevSnapshot = await prisma.inventorySnapshot.findFirst({
+        where: { variantId: variant.id, snapshotAt: { lt: now } },
+        orderBy: { snapshotAt: "desc" },
+      })
+      if (prevSnapshot) {
+        // OUT_OF_STOCK: was available, now unavailable
+        if (prevSnapshot.isAvailable && !nv.isAvailable) {
+          outOfStockVariantIds.push(variant.id)
+        }
+        // RESTOCK: was unavailable, now available
+        if (!prevSnapshot.isAvailable && nv.isAvailable) {
+          restockedVariantIds.push(variant.id)
         }
       }
 
@@ -287,5 +377,15 @@ async function processProducts(brandId: string, products: NormalizedProduct[]) {
     productsFound++
   }
 
-  return { productsFound, variantsFound, newProductIds, priceChanges }
+  return {
+    productsFound,
+    variantsFound,
+    newProductIds,
+    priceChanges,
+    restockedVariantIds,
+    newVariantIds,
+    discountStartDetails,
+    discountEndDetails,
+    outOfStockVariantIds,
+  }
 }

@@ -13,12 +13,24 @@ export interface PriceChangeDetail {
   newPrice: number
 }
 
+export interface DiscountChangeDetail {
+  variantId: string
+  productTitle: string
+  price: number
+  compareAtPrice: number | null
+}
+
 export interface ScrapeResults {
   brandId: string
   newProductIds: string[]
   priceChanges: PriceChangeDetail[]
   restockedVariantIds: string[]
   totalUnitsSold: number
+  newVariantIds: string[]
+  discountStartDetails: DiscountChangeDetail[]
+  discountEndDetails: DiscountChangeDetail[]
+  outOfStockVariantIds: string[]
+  removedProductIds: string[]
 }
 
 /**
@@ -118,6 +130,89 @@ export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
         }
         break
       }
+
+      case "VARIANT_ADDED": {
+        if (results.newVariantIds.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.newVariantIds.length} nueva(s) variante(s) agregada(s)`,
+              data: { variantIds: results.newVariantIds, count: results.newVariantIds.length },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
+
+      case "DISCOUNT_START": {
+        if (results.discountStartDetails.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.discountStartDetails.length} variante(s) con descuento iniciado`,
+              data: {
+                variants: results.discountStartDetails.map((d) => ({
+                  variantId: d.variantId,
+                  productTitle: d.productTitle,
+                  price: d.price,
+                  compareAtPrice: d.compareAtPrice,
+                })),
+              },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
+
+      case "DISCOUNT_END": {
+        if (results.discountEndDetails.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.discountEndDetails.length} variante(s) con descuento finalizado`,
+              data: {
+                variants: results.discountEndDetails.map((d) => ({
+                  variantId: d.variantId,
+                  productTitle: d.productTitle,
+                  price: d.price,
+                })),
+              },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
+
+      case "OUT_OF_STOCK": {
+        if (results.outOfStockVariantIds.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.outOfStockVariantIds.length} variante(s) sin stock`,
+              data: { variantIds: results.outOfStockVariantIds, count: results.outOfStockVariantIds.length },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
+
+      case "PRODUCT_REMOVED": {
+        if (results.removedProductIds.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.removedProductIds.length} producto(s) eliminado(s) de la tienda`,
+              data: { productIds: results.removedProductIds, count: results.removedProductIds.length },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
     }
   }
 
@@ -139,6 +234,11 @@ export async function createDefaultAlerts(brandId: string): Promise<void> {
     { type: "PRICE_CHANGE" as const, threshold: null },
     { type: "RESTOCK" as const, threshold: null },
     { type: "HIGH_VELOCITY" as const, threshold: 100 },
+    { type: "VARIANT_ADDED" as const, threshold: null },
+    { type: "DISCOUNT_START" as const, threshold: null },
+    { type: "DISCOUNT_END" as const, threshold: null },
+    { type: "OUT_OF_STOCK" as const, threshold: null },
+    { type: "PRODUCT_REMOVED" as const, threshold: null },
   ]
 
   await prisma.brandAlert.createMany({

@@ -320,6 +320,11 @@ enum AlertType {
   PRICE_DROP
   RESTOCK
   HIGH_VELOCITY
+  VARIANT_ADDED
+  DISCOUNT_START
+  DISCOUNT_END
+  OUT_OF_STOCK
+  PRODUCT_REMOVED
 }
 
 // ──────────────────────────────────────────────
