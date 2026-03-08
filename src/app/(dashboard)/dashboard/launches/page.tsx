@@ -127,21 +127,23 @@ export default async function LaunchesPage({
 
             return (
               <Card key={product.id} className="overflow-hidden hover:shadow-md transition-shadow">
-                {product.imageUrl && (
-                  <div className="aspect-[4/3] overflow-hidden bg-muted">
-                    <img
-                      src={product.imageUrl}
-                      alt={product.title}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
+                <Link href={`/dashboard/products/${product.id}`}>
+                  {product.imageUrl && (
+                    <div className="aspect-[4/3] overflow-hidden bg-muted">
+                      <img
+                        src={product.imageUrl}
+                        alt={product.title}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+                </Link>
                 <CardContent className="pt-4 pb-4">
                   <div className="space-y-2">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-semibold leading-tight line-clamp-2">
+                      <Link href={`/dashboard/products/${product.id}`} className="text-sm font-semibold leading-tight line-clamp-2 hover:underline">
                         {product.title}
-                      </p>
+                      </Link>
                       {product.brand.country && (
                         <span className="text-xs text-muted-foreground flex-shrink-0">
                           {product.brand.country}

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Building2, CheckCircle2, Circle, Globe, Loader2, Plus, RefreshCw, Trash2, XCircle } from "lucide-react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -262,7 +263,9 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-sm leading-tight">{brand.name}</p>
+                        <Link href={`/dashboard/brands/${brand.id}`} className="font-semibold text-sm leading-tight hover:underline">
+                          {brand.name}
+                        </Link>
                         {brand.isMyBrand && (
                           <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
                             Mi marca
