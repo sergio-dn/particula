@@ -1,12 +1,16 @@
 /**
- * Algoritmo de estimación de ventas por delta de inventario.
+ * Estimador de ventas híbrido — dos estrategias según datos disponibles.
  *
- * Lógica:
- *   ventas_estimadas = inventario_anterior - inventario_actual
- *   Si el resultado es negativo → hubo restock (inventario creció)
- *   Si el resultado es positivo → se vendieron esas unidades
+ * Caso 1 — Cart probe (precisión alta):
+ *   Ambos snapshots tienen probeMethod: "cart_probe"
+ *   unitsSold = prev.quantity - curr.quantity
+ *   Si delta ≤ 0 → restock o sin cambio, skip
  *
- * Precisión típica: ~85% en revenue, >95% en inventario (igual que Particl).
+ * Caso 2 — Available delta (precisión baja, fallback):
+ *   Snapshots con probeMethod: "available_only" o null (legacy)
+ *   available: true → false = 1 unidad vendida (mínimo estimable)
+ *   available: true → true = sin cambio detectable
+ *   available: false → true = restock
  */
 
 import { prisma } from "@/lib/prisma"
@@ -15,10 +19,9 @@ import { prisma } from "@/lib/prisma"
  * Calcula y guarda las estimaciones de ventas para una marca,
  * comparando los dos snapshots más recientes de cada variante.
  *
- * Usar los 2 snapshots más recientes (en vez de ventana de día fijo)
- * hace que funcione correctamente cuando:
- * - Se hacen dos scrapes el mismo día (testing)
- * - El schedule de scraping varía (cada 6h, cada 12h, etc.)
+ * Usa un sistema híbrido:
+ *   - Cart probe data → delta de inventario exacto
+ *   - Available only → delta binario (1 unidad cuando se agota)
  */
 export async function computeDailySalesEstimates(brandId: string, date: Date): Promise<number> {
   const dayStart = new Date(date)
@@ -44,16 +47,44 @@ export async function computeDailySalesEstimates(brandId: string, date: Date): P
     const snapshots = variant.inventorySnapshots
     if (snapshots.length < 2) continue
 
-    const curr = snapshots[0]  // más reciente
-    const prev = snapshots[1]  // anterior
+    const curr = snapshots[0] // más reciente
+    const prev = snapshots[1] // anterior
 
-    const delta = prev.quantity - curr.quantity
-    const wasRestock = delta < 0
+    let unitsSold = 0
+    let wasRestock = false
+    let estimationMethod: string
 
-    // Si no hubo cambio, saltar
-    if (delta === 0) continue
+    const bothCartProbe =
+      curr.probeMethod === "cart_probe" && prev.probeMethod === "cart_probe"
 
-    const unitsSold = Math.max(0, delta)
+    if (bothCartProbe) {
+      // ── Caso 1: Cart probe — delta de inventario exacto ──
+      const delta = prev.quantity - curr.quantity
+      wasRestock = delta < 0
+
+      if (delta <= 0) continue // restock o sin cambio → skip
+
+      unitsSold = delta
+      estimationMethod = "cart_probe"
+    } else {
+      // ── Caso 2: Available delta — estimación binaria ──
+      const wasAvailable = prev.isAvailable
+      const isAvailable = curr.isAvailable
+
+      if (wasAvailable && !isAvailable) {
+        // Se agotó → estimar 1 unidad vendida (mínimo)
+        unitsSold = 1
+        estimationMethod = "available_delta"
+      } else if (!wasAvailable && isAvailable) {
+        // Restock — no es una venta
+        wasRestock = true
+        continue
+      } else {
+        // Sin cambio detectable (ambos true o ambos false)
+        continue
+      }
+    }
+
     const revenueEstimate = unitsSold * Number(variant.price)
 
     await prisma.salesEstimate.upsert({
@@ -65,11 +96,13 @@ export async function computeDailySalesEstimates(brandId: string, date: Date): P
         unitsSold,
         revenueEstimate,
         wasRestock,
+        estimationMethod,
       },
       update: {
         unitsSold,
         revenueEstimate,
         wasRestock,
+        estimationMethod,
       },
     })
 

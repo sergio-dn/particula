@@ -15,6 +15,11 @@
 
 import { prisma } from "@/lib/prisma"
 import { fetchAllShopifyProducts, type ShopifyProduct } from "@/lib/scrapers/shopify"
+import {
+  detectInventoryTracking,
+  batchProbeInventory,
+  type VariantForProbe,
+} from "@/lib/scrapers/shopify-inventory"
 import { computeDailySalesEstimates } from "@/lib/estimators/sales"
 import { evaluateAlerts, type ScrapeResults } from "@/lib/pipeline/alerts"
 
@@ -59,7 +64,20 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
     const restockedVariantIds: string[] = []
 
     if (brand.shopifyStore) {
-      const result = await processShopifyBrand(brand.id, brand.domain)
+      // Detectar inventory tracking en primer scrape (o si aún no se detectó)
+      let inventoryTracking = brand.inventoryTracking
+      if (inventoryTracking === null) {
+        console.log(`[pipeline] ${brand.domain}: detecting inventory tracking...`)
+        const detection = await detectInventoryTracking(brand.domain)
+        inventoryTracking = detection.tracksInventory
+        await prisma.brand.update({
+          where: { id: brandId },
+          data: { inventoryTracking },
+        })
+        console.log(`[pipeline] ${brand.domain}: inventoryTracking = ${inventoryTracking}`)
+      }
+
+      const result = await processShopifyBrand(brand.id, brand.domain, inventoryTracking)
       productsFound = result.productsFound
       variantsFound = result.variantsFound
       newProductsCount = result.newProductIds.length
@@ -131,9 +149,14 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
 
 /**
  * Procesa una marca Shopify: fetch productos, upsert en DB,
- * crear snapshots de inventario y detectar cambios de precio.
+ * crear snapshots de inventario, ejecutar cart probes si aplica,
+ * y detectar cambios de precio.
  */
-async function processShopifyBrand(brandId: string, domain: string) {
+async function processShopifyBrand(
+  brandId: string,
+  domain: string,
+  inventoryTracking: boolean,
+) {
   const newProductIds: string[] = []
   const priceChanges: PriceChangeInfo[] = []
   let productsFound = 0
@@ -149,6 +172,11 @@ async function processShopifyBrand(brandId: string, domain: string) {
   const existingMap = new Map(existingProducts.map((p) => [p.externalId, p]))
 
   const now = new Date()
+
+  // Mapa variantId (DB) → externalId (Shopify) para cart probe posterior
+  const variantDbToExternal = new Map<string, { externalId: string; isAvailable: boolean; price: number }>()
+  // Mapa de snapshots creados para actualizar con cart probe
+  const snapshotIds = new Map<string, string>() // variantDbId → snapshotId
 
   for (const sp of products) {
     const externalId = String(sp.id)
@@ -234,15 +262,24 @@ async function processShopifyBrand(brandId: string, domain: string) {
         },
       })
 
-      // Snapshot de inventario
-      await prisma.inventorySnapshot.create({
+      // Snapshot de inventario — usar available como proxy (se actualiza con cart probe después)
+      const snapshot = await prisma.inventorySnapshot.create({
         data: {
           variantId: variant.id,
-          quantity: sv.inventory_quantity ?? 0,
+          quantity: sv.available ? 1 : 0, // proxy binario — cart probe lo refina
           isAvailable: sv.available,
+          probeMethod: "available_only",
           snapshotAt: now,
         },
       })
+
+      // Guardar para cart probe posterior
+      variantDbToExternal.set(variant.id, {
+        externalId: variantExtId,
+        isAvailable: sv.available,
+        price: Number(sv.price),
+      })
+      snapshotIds.set(variant.id, snapshot.id)
 
       // Registrar cambio de precio si cambió
       const lastPrice = await prisma.priceHistory.findFirst({
@@ -281,6 +318,49 @@ async function processShopifyBrand(brandId: string, domain: string) {
     }
 
     productsFound++
+  }
+
+  // ── Cart probe phase ──────────────────────────────────────────────────────
+  // Si la tienda trackea inventario, hacer cart probes para obtener stock real
+  if (inventoryTracking) {
+    const probeVariants: VariantForProbe[] = Array.from(variantDbToExternal.entries()).map(
+      ([, info]) => ({
+        externalId: info.externalId,
+        isAvailable: info.isAvailable,
+        price: info.price,
+      }),
+    )
+
+    console.log(`[pipeline] ${domain}: running cart probes on ${probeVariants.filter((v) => v.isAvailable).length} available variants...`)
+    const probeResult = await batchProbeInventory(domain, probeVariants)
+
+    // Actualizar snapshots con datos reales del cart probe
+    let probesApplied = 0
+    for (const result of probeResult.results) {
+      if (result.status !== "exact" || result.quantity === null) continue
+
+      // Encontrar el variantDbId por externalId
+      const entry = Array.from(variantDbToExternal.entries()).find(
+        ([, info]) => info.externalId === String(result.variantId),
+      )
+      if (!entry) continue
+      const [variantDbId] = entry
+      const snapId = snapshotIds.get(variantDbId)
+      if (!snapId) continue
+
+      await prisma.inventorySnapshot.update({
+        where: { id: snapId },
+        data: {
+          quantity: result.quantity,
+          probeMethod: "cart_probe",
+        },
+      })
+      probesApplied++
+    }
+
+    console.log(
+      `[pipeline] ${domain}: cart probe complete — ${probeResult.probed} probed, ${probesApplied} snapshots updated`,
+    )
   }
 
   return { productsFound, variantsFound, newProductIds, priceChanges }

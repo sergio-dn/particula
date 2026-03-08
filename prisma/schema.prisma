@@ -81,9 +81,10 @@ model Brand {
   category     BrandCategory @default(COMPETITOR)
   isMyBrand    Boolean       @default(false)
   isActive     Boolean       @default(true)
-  shopifyStore Boolean       @default(false)
-  currency     String        @default("USD")
-  tags         String[]      @default([])
+  shopifyStore       Boolean  @default(false)
+  inventoryTracking  Boolean? // null=no detectado, true=trackea inventario, false=no trackea
+  currency           String   @default("USD")
+  tags               String[] @default([])
   notes        String?
 
   createdAt DateTime @default(now())
@@ -176,6 +177,7 @@ model InventorySnapshot {
   variantId   String
   quantity    Int
   isAvailable Boolean
+  probeMethod String?  // "cart_probe" | "available_only" | null (legacy)
   snapshotAt  DateTime @default(now())
 
   variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
@@ -205,13 +207,14 @@ model PriceHistory {
 // ──────────────────────────────────────────────
 
 model SalesEstimate {
-  id              String   @id @default(cuid())
-  brandId         String
-  variantId       String
-  date            DateTime @db.Date
-  unitsSold       Int
-  revenueEstimate Decimal  @db.Decimal(12, 2)
-  wasRestock      Boolean  @default(false)
+  id               String   @id @default(cuid())
+  brandId          String
+  variantId        String
+  date             DateTime @db.Date
+  unitsSold        Int
+  revenueEstimate  Decimal  @db.Decimal(12, 2)
+  wasRestock       Boolean  @default(false)
+  estimationMethod String   @default("cart_probe") // "cart_probe" | "available_delta"
 
   brand   Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
   variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
