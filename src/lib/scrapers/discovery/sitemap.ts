@@ -12,6 +12,7 @@
  */
 
 import type { ProductURL } from "@/lib/scrapers/adapter"
+import { resilientFetch, getRandomUserAgent } from "@/lib/scrapers/http-client"
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -125,27 +126,21 @@ function extractHandle(rawUrl: string): string | undefined {
  * Handles gzipped content automatically (fetch decompresses by default).
  */
 async function fetchText(url: string): Promise<string> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const response = await resilientFetch(url, {
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    maxRetries: 1,
+    headers: {
+      "User-Agent": getRandomUserAgent(),
+      Accept: "application/xml, text/xml, */*",
+      "Accept-Encoding": "gzip, deflate",
+    },
+  })
 
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Particula-Bot/1.0 (product-discovery)",
-        Accept: "application/xml, text/xml, */*",
-        "Accept-Encoding": "gzip, deflate",
-      },
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} for ${url}`)
-    }
-
-    return await response.text()
-  } finally {
-    clearTimeout(timeoutId)
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} for ${url}`)
   }
+
+  return await response.text()
 }
 
 /**

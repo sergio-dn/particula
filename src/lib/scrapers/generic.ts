@@ -641,6 +641,7 @@ export class GenericAdapter implements StoreAdapter {
           weightUnit: null,
         },
       ],
+      confidence: 0.1,
     }
   }
 
@@ -762,6 +763,7 @@ export class GenericAdapter implements StoreAdapter {
       imageUrl: allImages[0] ?? null,
       imageUrls: allImages,
       variants,
+      confidence: 0.6,
     }
   }
 
@@ -825,6 +827,7 @@ export class GenericAdapter implements StoreAdapter {
       imageUrl: data.images[0] ?? null,
       imageUrls: data.images,
       variants,
+      confidence: 0.4,
     }
   }
 }

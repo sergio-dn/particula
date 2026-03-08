@@ -437,6 +437,7 @@ export class WooCommerceAdapter implements StoreAdapter {
       imageUrl: ap.images?.[0]?.src ?? null,
       imageUrls: ap.images?.map((i) => i.src) ?? [],
       variants,
+      confidence: 0.9,
     }
   }
 
@@ -523,6 +524,7 @@ export class WooCommerceAdapter implements StoreAdapter {
           weightUnit: null,
         },
       ],
+      confidence: 0.7,
     }
   }
 }

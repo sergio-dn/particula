@@ -42,6 +42,8 @@ export interface NormalizedProduct {
   imageUrl: string | null
   imageUrls: string[]
   variants: NormalizedVariant[]
+  /** Confidence score (0–1) indicating data quality. Platform-specific adapters score higher. */
+  confidence: number
 }
 
 export interface ProductURL {

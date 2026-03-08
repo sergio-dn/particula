@@ -11,6 +11,7 @@ import type {
   NormalizedVariant,
   ProductURL,
 } from "@/lib/scrapers/adapter"
+import { resilientFetch, getRandomUserAgent } from "@/lib/scrapers/http-client"
 
 // ─── Shopify raw types ───────────────────────────────────────────
 
@@ -50,11 +51,6 @@ export interface ShopifyProductsResponse {
 
 const PAGE_SIZE = 250
 const REQUEST_DELAY_MS = 500
-const USER_AGENT = "Mozilla/5.0 (compatible; Particula/1.0)"
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 // ─── Legacy detection function (kept for backward compatibility) ─
 
@@ -65,9 +61,9 @@ function sleep(ms: number) {
 export async function detectShopifyStore(domain: string): Promise<boolean> {
   const url = `https://${domain}/products.json?limit=1`
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(10_000),
+    const res = await resilientFetch(url, {
+      timeoutMs: 10_000,
+      maxRetries: 1,
     })
     if (!res.ok) return false
     const data = await res.json()
@@ -92,17 +88,13 @@ export async function fetchAllShopifyProducts(
 
   while (true) {
     const url = `https://${domain}/products.json?limit=${PAGE_SIZE}&page=${page}`
-    const res = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(30_000),
+    const res = await resilientFetch(url, {
+      timeoutMs: 30_000,
+      maxRetries: 3,
+      rateLimitPerDomain: REQUEST_DELAY_MS,
     })
 
     if (!res.ok) {
-      if (res.status === 429) {
-        // Rate limited — esperar más tiempo
-        await sleep(5_000)
-        continue
-      }
       throw new Error(`HTTP ${res.status} fetching ${url}`)
     }
 
@@ -114,7 +106,6 @@ export async function fetchAllShopifyProducts(
 
     if (products.length < PAGE_SIZE) break
     page++
-    await sleep(REQUEST_DELAY_MS)
   }
 
   return all
@@ -165,6 +156,7 @@ function normalizeShopifyProduct(sp: ShopifyProduct): NormalizedProduct {
     imageUrl: sp.images?.[0]?.src ?? null,
     imageUrls: sp.images?.map((i) => i.src) ?? [],
     variants: sp.variants.map(normalizeShopifyVariant),
+    confidence: 1.0,
   }
 }
 
@@ -188,12 +180,9 @@ export class ShopifyAdapter implements StoreAdapter {
     if (!handle) throw new Error(`Invalid product URL: ${url}`)
 
     const domain = new URL(url).hostname
-    const res = await fetch(
+    const res = await resilientFetch(
       `https://${domain}/products/${handle}.json`,
-      {
-        headers: { "User-Agent": USER_AGENT },
-        signal: AbortSignal.timeout(30_000),
-      }
+      { timeoutMs: 30_000, maxRetries: 2 }
     )
 
     if (!res.ok) {

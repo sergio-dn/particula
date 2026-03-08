@@ -161,30 +161,23 @@ function isAntiBot(status: number, body?: string): boolean {
 
 /**
  * Build fetch options with proxy support if PROXY_URL is configured.
- *
- * NOTE: Native Node.js fetch does not support proxies out of the box.
- * To enable proxy support, install `undici` and use its ProxyAgent:
- *
- *   import { ProxyAgent } from "undici"
- *   const dispatcher = new ProxyAgent(process.env.PROXY_URL)
- *   fetch(url, { dispatcher })
- *
- * The architecture below is ready for this integration. When undici is
- * added as a dependency, uncomment the proxy dispatcher lines.
+ * Uses undici's ProxyAgent to route requests through the configured proxy.
  */
 function getProxyOptions(): Record<string, unknown> {
   const proxyUrl = process.env.PROXY_URL
   if (!proxyUrl) return {}
 
-  // TODO: Uncomment when undici is added as a dependency:
-  // import { ProxyAgent } from "undici"
-  // return { dispatcher: new ProxyAgent(proxyUrl) }
-
-  console.warn(
-    `[http-client] PROXY_URL is set (${proxyUrl}) but proxy support requires the 'undici' package. ` +
-      `Install it with: npm install undici`
-  )
-  return {}
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { ProxyAgent } = require("undici") as typeof import("undici")
+    return { dispatcher: new ProxyAgent(proxyUrl) }
+  } catch {
+    console.warn(
+      `[http-client] PROXY_URL is set (${proxyUrl}) but the 'undici' package could not be loaded. ` +
+        `Install it with: npm install undici`
+    )
+    return {}
+  }
 }
 
 // ─── Resilient Fetch ────────────────────────────────────────────
