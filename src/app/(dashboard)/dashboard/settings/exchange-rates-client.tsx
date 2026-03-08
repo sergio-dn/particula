@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, Trash2, Loader2, ArrowRightLeft } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +17,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Select,
   SelectContent,
@@ -46,6 +57,7 @@ export function ExchangeRatesClient({ rates }: Props) {
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<ExchangeRate | null>(null)
 
   // Form state
   const [fromCurrency, setFromCurrency] = useState("")
@@ -73,24 +85,32 @@ export function ExchangeRatesClient({ rates }: Props) {
 
       if (!res.ok) {
         const err = await res.json()
-        alert(err.error?.formErrors?.[0] ?? "Error al crear tasa")
+        toast.error(err.error?.formErrors?.[0] ?? "Error al crear tasa")
         return
       }
 
       setDialogOpen(false)
       setFromCurrency("")
       setRate("")
+      toast.success("Tasa agregada")
       router.refresh()
     } finally {
       setLoading(false)
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("¿Eliminar esta tasa de cambio?")) return
-
-    await fetch(`/api/exchange-rates/${id}`, { method: "DELETE" })
-    router.refresh()
+  async function handleDelete(rateToDelete: ExchangeRate) {
+    try {
+      const res = await fetch(`/api/exchange-rates/${rateToDelete.id}`, { method: "DELETE" })
+      if (!res.ok) {
+        toast.error("Error al eliminar la tasa")
+        return
+      }
+      toast.success("Tasa eliminada")
+      router.refresh()
+    } catch {
+      toast.error("Error de conexión al eliminar")
+    }
   }
 
   // Agrupar tasas por par de moneda para mostrar la más reciente primero
@@ -294,7 +314,7 @@ export function ExchangeRatesClient({ rates }: Props) {
                           variant="ghost"
                           size="sm"
                           className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600"
-                          onClick={() => handleDelete(r.id)}
+                          onClick={() => setDeleteTarget(r)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -307,6 +327,34 @@ export function ExchangeRatesClient({ rates }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar tasa de cambio</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && (
+                <>Se eliminará la tasa {deleteTarget.fromCurrency} → {deleteTarget.toCurrency} del {new Date(deleteTarget.effectiveDate).toLocaleDateString("es-CL")}. Esta acción no se puede deshacer.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteTarget) {
+                  handleDelete(deleteTarget)
+                  setDeleteTarget(null)
+                }
+              }}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

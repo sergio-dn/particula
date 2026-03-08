@@ -2,7 +2,9 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Building2, CheckCircle2, Circle, Globe, Loader2, Plus, RefreshCw, Trash2, XCircle } from "lucide-react"
+import Link from "next/link"
+import { Building2, CheckCircle2, Circle, Globe, Loader2, Plus, RefreshCw, Search, Trash2, XCircle } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +17,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -74,6 +86,8 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isAdding, setIsAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Brand | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   // Form state
   const [form, setForm] = useState({
@@ -98,30 +112,59 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
 
       if (!res.ok) {
         const data = await res.json()
-        setAddError(data.error ?? "Error al agregar la marca")
+        const msg = data.error ?? "Error al agregar la marca"
+        setAddError(msg)
+        toast.error(msg)
         return
       }
 
       setIsAddOpen(false)
       setForm({ name: "", domain: "", country: "", category: "COMPETITOR", isMyBrand: false })
+      toast.success("Marca añadida correctamente")
       router.refresh()
     } catch {
       setAddError("Error de conexión")
+      toast.error("Error de conexión")
     } finally {
       setIsAdding(false)
     }
   }
 
-  async function handleDeleteBrand(id: string) {
-    if (!confirm("¿Eliminar esta marca? Se borrarán todos sus datos.")) return
-    await fetch(`/api/brands/${id}`, { method: "DELETE" })
-    router.refresh()
+  async function handleDeleteBrand(brand: Brand) {
+    try {
+      const res = await fetch(`/api/brands/${brand.id}`, { method: "DELETE" })
+      if (!res.ok) {
+        toast.error("Error al eliminar la marca")
+        return
+      }
+      toast.success("Marca eliminada")
+      router.refresh()
+    } catch {
+      toast.error("Error de conexión al eliminar")
+    }
   }
 
   async function handleTriggerScrape(id: string) {
-    await fetch(`/api/brands/${id}/scrape`, { method: "POST" })
-    router.refresh()
+    try {
+      const res = await fetch(`/api/brands/${id}/scrape`, { method: "POST" })
+      if (!res.ok) {
+        toast.error("Error al iniciar scraping")
+        return
+      }
+      toast.info("Scraping iniciado...")
+      router.refresh()
+    } catch {
+      toast.error("Error de conexión al iniciar scraping")
+    }
   }
+
+  const filteredBrands = searchQuery
+    ? brands.filter(
+        (b) =>
+          b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          b.domain.toLowerCase().includes(searchQuery.toLowerCase()),
+      )
+    : brands
 
   return (
     <div className="space-y-6">
@@ -230,8 +273,24 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
         </Dialog>
       </div>
 
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por nombre o dominio..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9"
+        />
+        {searchQuery && (
+          <p className="text-xs text-muted-foreground mt-1">
+            {filteredBrands.length} de {brands.length} marcas
+          </p>
+        )}
+      </div>
+
       {/* Brands grid */}
-      {brands.length === 0 ? (
+      {filteredBrands.length === 0 && !searchQuery ? (
         <Card className="py-16">
           <CardContent className="text-center space-y-4">
             <Building2 className="h-12 w-12 text-muted-foreground mx-auto" />
@@ -247,9 +306,19 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
             </Button>
           </CardContent>
         </Card>
+      ) : filteredBrands.length === 0 && searchQuery ? (
+        <Card className="py-16">
+          <CardContent className="text-center space-y-2">
+            <Search className="h-10 w-10 text-muted-foreground mx-auto" />
+            <p className="font-medium">Sin resultados</p>
+            <p className="text-sm text-muted-foreground">
+              No se encontraron marcas para &ldquo;{searchQuery}&rdquo;
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {brands.map((brand) => {
+          {filteredBrands.map((brand) => {
             const lastJob = brand.scrapeJobs[0]
             return (
               <Card key={brand.id} className="relative group hover:shadow-md transition-shadow">
@@ -341,7 +410,7 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs text-destructive hover:text-destructive gap-1.5 ml-auto"
-                      onClick={() => handleDeleteBrand(brand.id)}
+                      onClick={() => setDeleteTarget(brand)}
                     >
                       <Trash2 className="h-3 w-3" />
                       Eliminar
@@ -353,6 +422,34 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
           })}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Eliminar {deleteTarget?.name}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta accion es irreversible. Se borrarán todos los productos, variantes y datos de ventas asociados a esta marca.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteTarget) {
+                  handleDeleteBrand(deleteTarget)
+                  setDeleteTarget(null)
+                }
+              }}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

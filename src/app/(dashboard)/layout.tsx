@@ -1,5 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/layout/app-sidebar"
+import { Toaster } from "sonner"
 
 export const dynamic = "force-dynamic"
 
@@ -14,6 +15,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         <div className="p-6">{children}</div>
       </main>
+      <Toaster richColors position="bottom-right" />
     </SidebarProvider>
   )
 }

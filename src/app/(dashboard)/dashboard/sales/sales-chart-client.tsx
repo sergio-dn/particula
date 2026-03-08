@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation"
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -56,12 +58,14 @@ interface Props {
 }
 
 type Metric = "revenue" | "unitsSold"
+type ChartType = "line" | "bar"
 
 export function SalesChartClient({ brands, salesData, selectedBrandIds, days, displayCurrency }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { setDisplayCurrency } = useDisplayCurrency()
   const [metric, setMetric] = useState<Metric>("revenue")
+  const [chartType, setChartType] = useState<ChartType>("line")
   const [activeBrandIds, setActiveBrandIds] = useState<string[]>(selectedBrandIds)
 
   // Construir dataset para Recharts: array de { date, [brandName]: value }
@@ -83,9 +87,18 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days, di
     .filter((x) => x.brand)
 
   function toggleBrand(brandId: string) {
-    setActiveBrandIds((prev) =>
-      prev.includes(brandId) ? prev.filter((id) => id !== brandId) : [...prev, brandId]
-    )
+    const next = activeBrandIds.includes(brandId)
+      ? activeBrandIds.filter((id) => id !== brandId)
+      : [...activeBrandIds, brandId]
+    setActiveBrandIds(next)
+    // Persist in URL
+    const params = new URLSearchParams(searchParams.toString())
+    if (next.length > 0 && next.length < brands.length) {
+      params.set("brands", next.join(","))
+    } else {
+      params.delete("brands")
+    }
+    router.push(`/dashboard/sales?${params.toString()}`)
   }
 
   function setDays(d: string) {
@@ -134,8 +147,28 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days, di
           ))}
         </div>
 
-        {/* Metric selector + Currency */}
+        {/* Chart type + Metric selector + Currency */}
         <div className="flex gap-3 items-center">
+          {/* Chart type toggle */}
+          <div className="flex gap-1 border rounded-full p-0.5">
+            <button
+              onClick={() => setChartType("line")}
+              className={`text-xs px-3 py-1 rounded-full transition-colors ${
+                chartType === "line" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+              }`}
+            >
+              Línea
+            </button>
+            <button
+              onClick={() => setChartType("bar")}
+              className={`text-xs px-3 py-1 rounded-full transition-colors ${
+                chartType === "bar" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+              }`}
+            >
+              Barras
+            </button>
+          </div>
+
           <div className="flex gap-2">
             <button
               onClick={() => setMetric("revenue")}
@@ -211,47 +244,89 @@ export function SalesChartClient({ brands, salesData, selectedBrandIds, days, di
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(d) =>
-                    format(new Date(d), "d MMM", { locale: es })
-                  }
-                />
-                <YAxis
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) =>
-                    metric === "revenue"
-                      ? formatPriceCompact(v, displayCurrency)
-                      : v.toLocaleString()
-                  }
-                />
-                <Tooltip
-                  formatter={(value, name) => [
-                    metric === "revenue"
-                      ? formatPrice(Number(value), displayCurrency)
-                      : Number(value).toLocaleString(),
-                    name,
-                  ]}
-                  labelFormatter={(label) =>
-                    format(new Date(label), "d 'de' MMMM yyyy", { locale: es })
-                  }
-                />
-                <Legend />
-                {brandLines.map(({ brand, color }) => (
-                  <Line
-                    key={brand!.id}
-                    type="monotone"
-                    dataKey={brand!.name}
-                    stroke={color}
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
+              {chartType === "line" ? (
+                <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(d) =>
+                      format(new Date(d), "d MMM", { locale: es })
+                    }
                   />
-                ))}
-              </LineChart>
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) =>
+                      metric === "revenue"
+                        ? formatPriceCompact(v, displayCurrency)
+                        : v.toLocaleString()
+                    }
+                  />
+                  <Tooltip
+                    formatter={(value, name) => [
+                      metric === "revenue"
+                        ? formatPrice(Number(value), displayCurrency)
+                        : Number(value).toLocaleString(),
+                      name,
+                    ]}
+                    labelFormatter={(label) =>
+                      format(new Date(label), "d 'de' MMMM yyyy", { locale: es })
+                    }
+                  />
+                  <Legend />
+                  {brandLines.map(({ brand, color }) => (
+                    <Line
+                      key={brand!.id}
+                      type="monotone"
+                      dataKey={brand!.name}
+                      stroke={color}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  ))}
+                </LineChart>
+              ) : (
+                <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(d) =>
+                      format(new Date(d), "d MMM", { locale: es })
+                    }
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) =>
+                      metric === "revenue"
+                        ? formatPriceCompact(v, displayCurrency)
+                        : v.toLocaleString()
+                    }
+                  />
+                  <Tooltip
+                    formatter={(value, name) => [
+                      metric === "revenue"
+                        ? formatPrice(Number(value), displayCurrency)
+                        : Number(value).toLocaleString(),
+                      name,
+                    ]}
+                    labelFormatter={(label) =>
+                      format(new Date(label), "d 'de' MMMM yyyy", { locale: es })
+                    }
+                  />
+                  <Legend />
+                  {brandLines.map(({ brand, color }) => (
+                    <Bar
+                      key={brand!.id}
+                      dataKey={brand!.name}
+                      fill={color}
+                      stackId="stack"
+                      opacity={0.85}
+                    />
+                  ))}
+                </BarChart>
+              )}
             </ResponsiveContainer>
           )}
         </CardContent>

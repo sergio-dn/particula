@@ -60,10 +60,30 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r border-border">
       <SidebarHeader className="px-4 py-4">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
-            P
-          </div>
+        <Link href="/dashboard" className="flex items-center gap-2.5">
+          <svg
+            width="32"
+            height="32"
+            viewBox="0 0 32 32"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="flex-shrink-0"
+          >
+            {/* Center dot */}
+            <circle cx="16" cy="16" r="3" fill="url(#particula-grad)" />
+            {/* Orbital 1 — horizontal */}
+            <ellipse cx="16" cy="16" rx="13" ry="5" stroke="url(#particula-grad)" strokeWidth="1.5" opacity="0.8" />
+            {/* Orbital 2 — tilted 60deg */}
+            <ellipse cx="16" cy="16" rx="13" ry="5" stroke="url(#particula-grad)" strokeWidth="1.5" opacity="0.6" transform="rotate(60 16 16)" />
+            {/* Orbital 3 — tilted -60deg */}
+            <ellipse cx="16" cy="16" rx="13" ry="5" stroke="url(#particula-grad)" strokeWidth="1.5" opacity="0.6" transform="rotate(-60 16 16)" />
+            <defs>
+              <linearGradient id="particula-grad" x1="3" y1="3" x2="29" y2="29" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#6366f1" />
+                <stop offset="1" stopColor="#10b981" />
+              </linearGradient>
+            </defs>
+          </svg>
           <span className="font-semibold text-base tracking-tight">Particula</span>
         </Link>
       </SidebarHeader>

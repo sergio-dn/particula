@@ -3,6 +3,7 @@ import { SalesChartClient } from "./sales-chart-client"
 import { batchConvert } from "@/lib/exchange"
 
 interface SearchParams {
+  brands?: string
   brandIds?: string
   days?: string
   displayCurrency?: string
@@ -49,8 +50,10 @@ export default async function SalesPage({
 
   const allBrands = await getBrands()
 
-  const selectedBrandIds = sp.brandIds
-    ? sp.brandIds.split(",").filter(Boolean)
+  // Support both "brands" (new) and "brandIds" (legacy) param names
+  const brandsParam = sp.brands ?? sp.brandIds
+  const selectedBrandIds = brandsParam
+    ? brandsParam.split(",").filter(Boolean)
     : allBrands.slice(0, 5).map((b) => b.id)
 
   const salesData = await getSalesCurves(selectedBrandIds, days)

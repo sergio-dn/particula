@@ -10,6 +10,7 @@ interface SearchParams {
   productType?: string
   days?: string
   displayCurrency?: string
+  search?: string
 }
 
 async function getTopSellers(params: SearchParams) {
@@ -102,6 +103,8 @@ export default async function TopSellersPage({
 
   const converted = await batchConvert(conversionInputs, displayCurrency)
 
+  const search = sp.search ?? ""
+
   const enrichedItems = topSellers
     .map((item, i) => ({
       ...item,
@@ -109,6 +112,14 @@ export default async function TopSellersPage({
       hasRate: converted[i].hasRate,
     }))
     .sort((a, b) => b.convertedRevenue - a.convertedRevenue)
+
+  const filtered = search
+    ? enrichedItems.filter(
+        (s) =>
+          s.variant.product.title.toLowerCase().includes(search.toLowerCase()) ||
+          (s.variant.sku?.toLowerCase().includes(search.toLowerCase())),
+      )
+    : enrichedItems
 
   return (
     <div className="space-y-6">
@@ -119,9 +130,9 @@ export default async function TopSellersPage({
         </p>
       </div>
 
-      <TopSellersFilters brands={brands} productTypes={productTypes} />
+      <TopSellersFilters brands={brands} productTypes={productTypes} search={search} />
 
-      {enrichedItems.length === 0 ? (
+      {filtered.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">
             <p className="text-muted-foreground">
@@ -133,7 +144,7 @@ export default async function TopSellersPage({
         <Card>
           <CardHeader className="pb-0">
             <CardTitle className="text-base">
-              {enrichedItems.length} SKUs · {sp.days ?? "30"} días
+              {filtered.length} SKUs · {sp.days ?? "30"} días
               {displayCurrency !== "USD" && (
                 <Badge variant="outline" className="ml-2 text-[10px]">
                   en {displayCurrency}
@@ -143,7 +154,7 @@ export default async function TopSellersPage({
           </CardHeader>
           <CardContent className="pt-4">
             <div className="divide-y">
-              {enrichedItems.map((item, i) => (
+              {filtered.map((item, i) => (
                 <div key={item.variantId} className="flex items-center gap-4 py-3">
                   {/* Rank */}
                   <span className="text-sm font-mono text-muted-foreground w-6 text-right">
