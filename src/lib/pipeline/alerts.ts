@@ -19,6 +19,11 @@ export interface ScrapeResults {
   priceChanges: PriceChangeDetail[]
   restockedVariantIds: string[]
   totalUnitsSold: number
+  newVariants: Array<{ variantId: string; productTitle: string; variantTitle: string }>
+  discountStarts: Array<{ variantId: string; compareAtPrice: number; currentPrice: number; discountPercent: number }>
+  discountEnds: Array<{ variantId: string; previousCompareAtPrice: number; currentPrice: number }>
+  outOfStockVariantIds: string[]
+  removedProductIds: string[]
 }
 
 /**
@@ -118,6 +123,86 @@ export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
         }
         break
       }
+
+      case "VARIANT_ADDED": {
+        if (results.newVariants.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.newVariants.length} nueva(s) variante(s) detectada(s)`,
+              data: {
+                variants: results.newVariants,
+                count: results.newVariants.length,
+              },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
+
+      case "DISCOUNT_START": {
+        if (results.discountStarts.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.discountStarts.length} producto(s) iniciaron descuento`,
+              data: {
+                discounts: results.discountStarts.map((d) => ({
+                  variantId: d.variantId,
+                  compareAtPrice: d.compareAtPrice,
+                  currentPrice: d.currentPrice,
+                  discountPercent: d.discountPercent,
+                })),
+              },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
+
+      case "DISCOUNT_END": {
+        if (results.discountEnds.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.discountEnds.length} producto(s) terminaron descuento`,
+              data: { discounts: results.discountEnds },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
+
+      case "OUT_OF_STOCK": {
+        if (results.outOfStockVariantIds.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.outOfStockVariantIds.length} variante(s) agotada(s)`,
+              data: { variantIds: results.outOfStockVariantIds },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
+
+      case "PRODUCT_REMOVED": {
+        if (results.removedProductIds.length > 0) {
+          await prisma.alertEvent.create({
+            data: {
+              alertId: alert.id,
+              message: `${results.removedProductIds.length} producto(s) removido(s) del catálogo`,
+              data: { productIds: results.removedProductIds },
+            },
+          })
+          eventsCreated++
+        }
+        break
+      }
     }
   }
 
@@ -139,6 +224,11 @@ export async function createDefaultAlerts(brandId: string): Promise<void> {
     { type: "PRICE_CHANGE" as const, threshold: null },
     { type: "RESTOCK" as const, threshold: null },
     { type: "HIGH_VELOCITY" as const, threshold: 100 },
+    { type: "VARIANT_ADDED" as const, threshold: null },
+    { type: "DISCOUNT_START" as const, threshold: null },
+    { type: "DISCOUNT_END" as const, threshold: null },
+    { type: "OUT_OF_STOCK" as const, threshold: null },
+    { type: "PRODUCT_REMOVED" as const, threshold: null },
   ]
 
   await prisma.brandAlert.createMany({

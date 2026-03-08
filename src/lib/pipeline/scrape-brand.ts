@@ -21,7 +21,9 @@ import {
   type VariantForProbe,
 } from "@/lib/scrapers/shopify-inventory"
 import { computeDailySalesEstimates } from "@/lib/estimators/sales"
+import { computeBrandWinnerScores } from "@/lib/estimators/winner-score"
 import { evaluateAlerts, type ScrapeResults } from "@/lib/pipeline/alerts"
+import { diffSnapshots, filterEvents, diffSummary } from "@/lib/pipeline/snapshot-diff"
 
 export interface ScrapeResult {
   brandId: string
@@ -96,6 +98,23 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
     yesterday.setDate(yesterday.getDate() - 1)
     const estimatesCreated = await computeDailySalesEstimates(brandId, yesterday)
 
+    // Ejecutar diffing de snapshots para detectar eventos
+    const diff = await diffSnapshots(brandId)
+    console.log(diffSummary(diff))
+
+    // Extraer datos del diff para alertas
+    const outOfStockEvents = filterEvents(diff, "OUT_OF_STOCK")
+    const restockEvents = filterEvents(diff, "RESTOCK")
+    const variantAddedEvents = filterEvents(diff, "VARIANT_ADDED")
+    const discountStartEvents = filterEvents(diff, "DISCOUNT_START")
+    const discountEndEvents = filterEvents(diff, "DISCOUNT_END")
+    const removedEvents = filterEvents(diff, "PRODUCT_REMOVED")
+
+    // Popular restockedVariantIds del diff
+    for (const evt of restockEvents) {
+      if (evt.variantId) restockedVariantIds.push(evt.variantId)
+    }
+
     // Evaluar alertas
     const scrapeResults: ScrapeResults = {
       brandId,
@@ -106,9 +125,33 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
         newPrice: pc.newPrice,
       })),
       restockedVariantIds,
-      totalUnitsSold: estimatesCreated, // aproximación — se refina con datos reales
+      totalUnitsSold: estimatesCreated,
+      newVariants: variantAddedEvents.map((e) => ({
+        variantId: e.variantId ?? "",
+        productTitle: (e.data.productTitle as string) ?? "",
+        variantTitle: (e.data.variantTitle as string) ?? "",
+      })),
+      discountStarts: discountStartEvents.map((e) => ({
+        variantId: e.variantId ?? "",
+        compareAtPrice: (e.data.compareAtPrice as number) ?? 0,
+        currentPrice: (e.data.currentPrice as number) ?? 0,
+        discountPercent: (e.data.discountPercent as number) ?? 0,
+      })),
+      discountEnds: discountEndEvents.map((e) => ({
+        variantId: e.variantId ?? "",
+        previousCompareAtPrice: (e.data.previousCompareAtPrice as number) ?? 0,
+        currentPrice: (e.data.currentPrice as number) ?? 0,
+      })),
+      outOfStockVariantIds: outOfStockEvents
+        .map((e) => e.variantId)
+        .filter((id): id is string => id !== undefined),
+      removedProductIds: removedEvents.map((e) => e.productId),
     }
     await evaluateAlerts(scrapeResults)
+
+    // Calcular winner scores
+    const scoresCreated = await computeBrandWinnerScores(brandId, yesterday)
+    console.log(`[pipeline] ${brand.domain}: ${scoresCreated} winner scores calculated`)
 
     // Marcar como completado
     await prisma.scrapeJob.updateMany({
