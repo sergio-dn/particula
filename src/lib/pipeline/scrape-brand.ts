@@ -3,18 +3,21 @@
  *
  * Flujo:
  *   1. Crear/actualizar ScrapeJob → RUNNING
- *   2. Fetch productos Shopify
- *   3. Upsert Products + Variants
- *   4. Crear InventorySnapshots
- *   5. Detectar cambios de precio → PriceHistory
- *   6. Marcar lanzamientos nuevos
- *   7. Calcular estimaciones de ventas (delta de inventario)
- *   8. Evaluar alertas
- *   9. Marcar ScrapeJob → COMPLETED
+ *   2. Seleccionar adapter por plataforma
+ *   3. Fetch productos via adapter genérico
+ *   4. Upsert Products + Variants
+ *   5. Crear InventorySnapshots
+ *   6. Detectar cambios de precio → PriceHistory
+ *   7. Marcar lanzamientos nuevos
+ *   8. Calcular estimaciones de ventas (delta de inventario)
+ *   9. Evaluar alertas
+ *  10. Marcar ScrapeJob → COMPLETED
  */
 
 import { prisma } from "@/lib/prisma"
-import { fetchAllShopifyProducts, type ShopifyProduct } from "@/lib/scrapers/shopify"
+import { getAdapter } from "@/lib/scrapers/adapter"
+import type { NormalizedProduct } from "@/lib/scrapers/adapter"
+import type { PlatformType } from "@/lib/detectors/platform-detector"
 import { computeDailySalesEstimates } from "@/lib/estimators/sales"
 import { evaluateAlerts, type ScrapeResults } from "@/lib/pipeline/alerts"
 
@@ -58,14 +61,20 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
     const priceChanges: PriceChangeInfo[] = []
     const restockedVariantIds: string[] = []
 
-    if (brand.shopifyStore) {
-      const result = await processShopifyBrand(brand.id, brand.domain)
-      productsFound = result.productsFound
-      variantsFound = result.variantsFound
-      newProductsCount = result.newProductIds.length
-      newProductIds.push(...result.newProductIds)
-      priceChanges.push(...result.priceChanges)
-    }
+    // Determinar plataforma: usar platformType guardado, o SHOPIFY si shopifyStore es true
+    const platformType: PlatformType =
+      (brand.platformType as PlatformType) ??
+      (brand.shopifyStore ? "SHOPIFY" : "GENERIC")
+
+    const adapter = await getAdapter(platformType)
+    const products = await adapter.fetchAllProducts(brand.domain)
+
+    const result = await processProducts(brand.id, products)
+    productsFound = result.productsFound
+    variantsFound = result.variantsFound
+    newProductsCount = result.newProductIds.length
+    newProductIds.push(...result.newProductIds)
+    priceChanges.push(...result.priceChanges)
 
     // Actualizar contadores en el scrape job
     await prisma.scrapeJob.updateMany({
@@ -130,51 +139,46 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
 }
 
 /**
- * Procesa una marca Shopify: fetch productos, upsert en DB,
+ * Procesa productos normalizados: upsert en DB,
  * crear snapshots de inventario y detectar cambios de precio.
+ *
+ * Funciona con cualquier adapter gracias a los tipos normalizados.
  */
-async function processShopifyBrand(brandId: string, domain: string) {
+async function processProducts(brandId: string, products: NormalizedProduct[]) {
   const newProductIds: string[] = []
   const priceChanges: PriceChangeInfo[] = []
   let productsFound = 0
   let variantsFound = 0
-
-  const products = await fetchAllShopifyProducts(domain)
 
   // Obtener todos los externalIds ya conocidos de esta marca
   const existingProducts = await prisma.product.findMany({
     where: { brandId },
     select: { externalId: true, id: true },
   })
-  const existingMap = new Map(existingProducts.map((p) => [p.externalId, p]))
+  const existingMap = new Map(existingProducts.map((p: { externalId: string; id: string }) => [p.externalId, p]))
 
   const now = new Date()
 
-  for (const sp of products) {
-    const externalId = String(sp.id)
-    const existing = existingMap.get(externalId)
+  for (const np of products) {
+    const existing = existingMap.get(np.externalId)
     const isNewProduct = !existing
     const isLaunch = isNewProduct
 
     // Upsert del producto
     const product = await prisma.product.upsert({
-      where: { brandId_externalId: { brandId, externalId } },
+      where: { brandId_externalId: { brandId, externalId: np.externalId } },
       create: {
         brandId,
-        externalId,
-        title: sp.title,
-        handle: sp.handle,
-        productType: sp.product_type || null,
-        tags: Array.isArray(sp.tags)
-          ? sp.tags.map((t) => t.trim()).filter(Boolean)
-          : typeof sp.tags === "string"
-            ? sp.tags.split(",").map((t) => t.trim()).filter(Boolean)
-            : [],
-        vendor: sp.vendor || null,
-        imageUrl: sp.images?.[0]?.src ?? null,
-        imageUrls: sp.images?.map((i) => i.src) ?? [],
-        bodyHtml: sp.body_html || null,
-        publishedAt: sp.published_at ? new Date(sp.published_at) : null,
+        externalId: np.externalId,
+        title: np.title,
+        handle: np.handle,
+        productType: np.productType,
+        tags: np.tags,
+        vendor: np.vendor,
+        imageUrl: np.imageUrl,
+        imageUrls: np.imageUrls,
+        bodyHtml: np.bodyHtml,
+        publishedAt: np.publishedAt,
         firstSeenAt: now,
         lastSeenAt: now,
         isActive: true,
@@ -182,17 +186,13 @@ async function processShopifyBrand(brandId: string, domain: string) {
         launchDate: isLaunch ? now : null,
       },
       update: {
-        title: sp.title,
-        handle: sp.handle,
-        productType: sp.product_type || null,
-        tags: Array.isArray(sp.tags)
-          ? sp.tags.map((t) => t.trim()).filter(Boolean)
-          : typeof sp.tags === "string"
-            ? sp.tags.split(",").map((t) => t.trim()).filter(Boolean)
-            : [],
-        vendor: sp.vendor || null,
-        imageUrl: sp.images?.[0]?.src ?? null,
-        imageUrls: sp.images?.map((i) => i.src) ?? [],
+        title: np.title,
+        handle: np.handle,
+        productType: np.productType,
+        tags: np.tags,
+        vendor: np.vendor,
+        imageUrl: np.imageUrl,
+        imageUrls: np.imageUrls,
         lastSeenAt: now,
         isActive: true,
       },
@@ -203,34 +203,37 @@ async function processShopifyBrand(brandId: string, domain: string) {
     }
 
     // Upsert de variantes + snapshot de inventario
-    for (const sv of sp.variants) {
-      const variantExtId = String(sv.id)
-
+    for (const nv of np.variants) {
       const variant = await prisma.variant.upsert({
-        where: { productId_externalId: { productId: product.id, externalId: variantExtId } },
+        where: {
+          productId_externalId: {
+            productId: product.id,
+            externalId: nv.externalId,
+          },
+        },
         create: {
           productId: product.id,
-          externalId: variantExtId,
-          title: sv.title,
-          sku: sv.sku || null,
-          option1: sv.option1 || null,
-          option2: sv.option2 || null,
-          option3: sv.option3 || null,
-          price: sv.price,
-          compareAtPrice: sv.compare_at_price || null,
-          isAvailable: sv.available,
-          weight: sv.weight || null,
-          weightUnit: sv.weight_unit || null,
+          externalId: nv.externalId,
+          title: nv.title,
+          sku: nv.sku,
+          option1: nv.option1,
+          option2: nv.option2,
+          option3: nv.option3,
+          price: nv.price.price,
+          compareAtPrice: nv.price.compareAtPrice,
+          isAvailable: nv.isAvailable,
+          weight: nv.weight,
+          weightUnit: nv.weightUnit,
         },
         update: {
-          title: sv.title,
-          sku: sv.sku || null,
-          option1: sv.option1 || null,
-          option2: sv.option2 || null,
-          option3: sv.option3 || null,
-          price: sv.price,
-          compareAtPrice: sv.compare_at_price || null,
-          isAvailable: sv.available,
+          title: nv.title,
+          sku: nv.sku,
+          option1: nv.option1,
+          option2: nv.option2,
+          option3: nv.option3,
+          price: nv.price.price,
+          compareAtPrice: nv.price.compareAtPrice,
+          isAvailable: nv.isAvailable,
         },
       })
 
@@ -238,8 +241,8 @@ async function processShopifyBrand(brandId: string, domain: string) {
       await prisma.inventorySnapshot.create({
         data: {
           variantId: variant.id,
-          quantity: sv.inventory_quantity ?? 0,
-          isAvailable: sv.available,
+          quantity: nv.inventoryQuantity ?? 0,
+          isAvailable: nv.isAvailable,
           snapshotAt: now,
         },
       })
@@ -252,15 +255,16 @@ async function processShopifyBrand(brandId: string, domain: string) {
 
       const priceChanged =
         !lastPrice ||
-        lastPrice.price.toString() !== sv.price ||
-        (lastPrice.compareAtPrice?.toString() ?? null) !== (sv.compare_at_price ?? null)
+        lastPrice.price.toString() !== nv.price.price ||
+        (lastPrice.compareAtPrice?.toString() ?? null) !==
+          (nv.price.compareAtPrice ?? null)
 
       if (priceChanged) {
         await prisma.priceHistory.create({
           data: {
             variantId: variant.id,
-            price: sv.price,
-            compareAtPrice: sv.compare_at_price || null,
+            price: nv.price.price,
+            compareAtPrice: nv.price.compareAtPrice,
             recordedAt: now,
           },
         })
@@ -269,10 +273,10 @@ async function processShopifyBrand(brandId: string, domain: string) {
         if (lastPrice) {
           priceChanges.push({
             variantId: variant.id,
-            sku: sv.sku,
+            sku: nv.sku,
             oldPrice: Number(lastPrice.price),
-            newPrice: Number(sv.price),
-            productTitle: sp.title,
+            newPrice: Number(nv.price.price),
+            productTitle: np.title,
           })
         }
       }
