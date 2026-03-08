@@ -102,15 +102,18 @@ export async function getAdapter(platformType: PlatformType): Promise<StoreAdapt
       const { ShopifyAdapter } = await import("@/lib/scrapers/shopify")
       return new ShopifyAdapter()
     }
-    // Future adapters:
-    // case "WOOCOMMERCE": { ... }
-    // case "MAGENTO": { ... }
-    // case "BIGCOMMERCE": { ... }
-    // case "GENERIC": { ... }
-    default:
-      throw new Error(
-        `No adapter available for platform "${platformType}". ` +
-        `Only SHOPIFY is currently supported.`
-      )
+    case "WOOCOMMERCE": {
+      const { WooCommerceAdapter } = await import("@/lib/scrapers/woocommerce")
+      return new WooCommerceAdapter()
+    }
+    case "GENERIC":
+    case "MAGENTO":
+    case "BIGCOMMERCE":
+    default: {
+      // Magento y BigCommerce usan el adapter genérico (JSON-LD / HTML)
+      // hasta que se implementen adapters específicos
+      const { GenericAdapter } = await import("@/lib/scrapers/generic")
+      return new GenericAdapter()
+    }
   }
 }
