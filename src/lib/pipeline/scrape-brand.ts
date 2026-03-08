@@ -19,6 +19,7 @@ import { getAdapter } from "@/lib/scrapers/adapter"
 import type { NormalizedProduct } from "@/lib/scrapers/adapter"
 import type { PlatformType } from "@/lib/detectors/platform-detector"
 import { computeDailySalesEstimates } from "@/lib/estimators/sales"
+import { computeWinnerScores } from "@/lib/estimators/winners"
 import { evaluateAlerts, type ScrapeResults, type DiscountChangeDetail } from "@/lib/pipeline/alerts"
 
 export interface ScrapeResult {
@@ -113,6 +114,11 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
     const estimatesCreated = await computeDailySalesEstimates(brandId, yesterday)
+
+    // Calcular winner scores
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    await computeWinnerScores(brandId, today)
 
     // Evaluar alertas
     const scrapeResults: ScrapeResults = {
