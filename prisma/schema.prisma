@@ -83,6 +83,9 @@ model Brand {
   isActive     Boolean       @default(true)
   shopifyStore       Boolean  @default(false)
   inventoryTracking  Boolean? // null=no detectado, true=trackea inventario, false=no trackea
+  platformType       String?    // "SHOPIFY" | "WOOCOMMERCE" | "MAGENTO" | "BIGCOMMERCE" | "GENERIC"
+  platformConfidence Float?     // 0.0-1.0 detection confidence
+  platformSignals    String[]   @default([]) // detected signals for debugging
   currency           String   @default("USD")
   tags               String[] @default([])
   notes        String?

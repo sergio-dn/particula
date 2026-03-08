@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { after } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { detectShopifyStore } from "@/lib/scrapers/shopify"
+import { detectPlatform } from "@/lib/detectors/platform-detector"
 import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
 import { createDefaultAlerts } from "@/lib/pipeline/alerts"
 
@@ -65,7 +65,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Auto-detectar si es Shopify
-  const isShopify = await detectShopifyStore(cleanDomain)
+  // Auto-detectar plataforma
+  const detection = await detectPlatform(cleanDomain)
+  const isShopify = detection.platform === "SHOPIFY"
 
   // Generar slug
   const slug = cleanDomain.replace(/\./g, "-").replace(/[^a-z0-9-]/g, "")
@@ -79,6 +81,9 @@ export async function POST(req: NextRequest) {
       category,
       isMyBrand,
       shopifyStore: isShopify,
+      platformType: detection.platform,
+      platformConfidence: detection.confidence,
+      platformSignals: detection.signals.filter((s) => s.found).map((s) => s.signal),
       notes: notes ?? null,
       isActive: true,
     },
@@ -104,7 +109,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json(
-    { ...brand, scrapeJobId: scrapeJob.id, shopifyDetected: isShopify },
+    { ...brand, scrapeJobId: scrapeJob.id, shopifyDetected: isShopify, platformDetection: { platform: detection.platform, confidence: detection.confidence } },
     { status: 201 }
   )
 }
