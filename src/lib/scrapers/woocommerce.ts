@@ -5,6 +5,7 @@
  * Implementa StoreAdapter para el tipo WOOCOMMERCE.
  */
 
+import * as cheerio from "cheerio"
 import type {
   StoreAdapter,
   NormalizedProduct,
@@ -123,12 +124,16 @@ export class WooCommerceAdapter implements StoreAdapter {
   readonly platform = "WOOCOMMERCE" as const
 
   async discoverProducts(domain: string): Promise<ProductURL[]> {
-    // Try WC REST API first
+    // Strategy 1: WC REST API
     const apiUrls = await this.discoverViaApi(domain)
     if (apiUrls.length > 0) return apiUrls
 
-    // Fallback: sitemap
-    return discoverProductsViaSitemap(domain)
+    // Strategy 2: Sitemap
+    const sitemapUrls = await discoverProductsViaSitemap(domain)
+    if (sitemapUrls.length > 0) return sitemapUrls
+
+    // Strategy 3: /shop/ page pagination (HTML fallback)
+    return this.discoverViaShopPage(domain)
   }
 
   async fetchProduct(url: string): Promise<WcHtmlPayload> {
@@ -267,6 +272,81 @@ export class WooCommerceAdapter implements StoreAdapter {
     }
 
     return urls
+  }
+
+  private async discoverViaShopPage(domain: string): Promise<ProductURL[]> {
+    const productUrls: ProductURL[] = []
+    const seen = new Set<string>()
+    let page = 1
+    const maxPages = 50
+
+    while (page <= maxPages) {
+      const pageUrl =
+        page === 1
+          ? `https://${domain}/shop/`
+          : `https://${domain}/shop/page/${page}/`
+
+      try {
+        const res = await resilientFetch(pageUrl, {
+          headers: { "User-Agent": getRandomUserAgent() },
+          timeoutMs: TIMEOUT_MS,
+          maxRetries: 1,
+        })
+        if (!res.ok) break
+
+        const html = await res.text()
+        const $ = cheerio.load(html)
+
+        const links: string[] = []
+
+        // WooCommerce product links: loop product anchors and generic product links
+        $(
+          "ul.products li.product a.woocommerce-LoopProduct-link, " +
+            "ul.products li.product a[href*='/product/'], " +
+            ".products .product a[href*='/product/']"
+        ).each((_, el) => {
+          const href = $(el).attr("href")
+          if (href && href.includes("/product/")) {
+            links.push(href)
+          }
+        })
+
+        // Broader fallback if theme uses non-standard markup
+        if (links.length === 0) {
+          $("a[href*='/product/']").each((_, el) => {
+            const href = $(el).attr("href")
+            if (href) links.push(href)
+          })
+        }
+
+        if (links.length === 0) break
+
+        for (const link of links) {
+          const fullUrl = link.startsWith("http")
+            ? link
+            : `https://${domain}${link}`
+          if (seen.has(fullUrl)) continue
+          seen.add(fullUrl)
+
+          const handle =
+            fullUrl.split("/product/").pop()?.replace(/\/$/, "")?.split("?")[0] ?? undefined
+          productUrls.push({ url: fullUrl, handle })
+        }
+
+        // Check for next page
+        const hasNext =
+          $("a.next.page-numbers").length > 0 ||
+          $(`a[href*="/shop/page/${page + 1}"]`).length > 0
+        if (!hasNext) break
+
+        page++
+        await sleep(DELAY_BETWEEN_REQUESTS_MS)
+      } catch {
+        break
+      }
+    }
+
+    return productUrls
   }
 
   private async fetchAllViaApi(
