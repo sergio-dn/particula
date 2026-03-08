@@ -23,6 +23,7 @@ import {
 import { computeDailySalesEstimates } from "@/lib/estimators/sales"
 import { computeBrandWinnerScores } from "@/lib/estimators/winner-score"
 import { evaluateAlerts, type ScrapeResults } from "@/lib/pipeline/alerts"
+import { dispatchNotifications } from "@/lib/notifications/dispatcher"
 import { diffSnapshots, filterEvents, diffSummary } from "@/lib/pipeline/snapshot-diff"
 
 export interface ScrapeResult {
@@ -147,7 +148,12 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
         .filter((id): id is string => id !== undefined),
       removedProductIds: removedEvents.map((e) => e.productId),
     }
-    await evaluateAlerts(scrapeResults)
+    const alertEventIds = await evaluateAlerts(scrapeResults)
+
+    // Dispatch email/webhook notifications
+    await dispatchNotifications(brandId, alertEventIds).catch((e) =>
+      console.error(`[pipeline] Notification dispatch failed:`, e),
+    )
 
     // Calcular winner scores
     const scoresCreated = await computeBrandWinnerScores(brandId, yesterday)

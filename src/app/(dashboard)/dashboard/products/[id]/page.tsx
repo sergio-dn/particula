@@ -1,3 +1,4 @@
+import { formatPrice } from "@/lib/utils"
 import { prisma } from "@/lib/prisma"
 import { PriceHistoryChart } from "@/components/charts/price-history-chart"
 import { InventoryChart } from "@/components/charts/inventory-chart"
@@ -25,8 +26,6 @@ const fmtDateFull = (d: Date) =>
     day: "numeric",
   })
 
-const fmtCurrency = (n: number) =>
-  n.toLocaleString("es-MX", { style: "currency", currency: "USD" })
 
 const fmtPct = (n: number) => `${Math.round(n * 100)}%`
 
@@ -65,7 +64,7 @@ async function getProduct(id: string) {
   return prisma.product.findUnique({
     where: { id },
     include: {
-      brand: { select: { id: true, name: true } },
+      brand: { select: { id: true, name: true, currency: true } },
       variants: {
         orderBy: { title: "asc" },
       },
@@ -175,6 +174,7 @@ export default async function ProductDetailPage({
     ])
 
   const winnerScore = product.winnerScores[0] ?? null
+  const brandCurrency = product.brand.currency ?? "USD"
 
   // Group sales estimates by date
   const salesByDate = new Map<string, typeof salesEstimates>()
@@ -302,12 +302,12 @@ export default async function ProductDetailPage({
                           <TableCell>{v.option2 || "-"}</TableCell>
                           <TableCell>{v.option3 || "-"}</TableCell>
                           <TableCell className="text-right">
-                            {fmtCurrency(price)}
+                            {formatPrice(price, brandCurrency)}
                           </TableCell>
                           <TableCell className="text-right">
                             {compareAt ? (
                               <span>
-                                {fmtCurrency(compareAt)}
+                                {formatPrice(compareAt, brandCurrency)}
                                 {discount && (
                                   <Badge
                                     variant="secondary"
@@ -400,11 +400,11 @@ export default async function ProductDetailPage({
                             {ph.variant.title}
                           </TableCell>
                           <TableCell className="text-right">
-                            {fmtCurrency(price)}
+                            {formatPrice(price, brandCurrency)}
                           </TableCell>
                           <TableCell className="text-right">
                             {ph.compareAtPrice
-                              ? fmtCurrency(Number(ph.compareAtPrice))
+                              ? formatPrice(Number(ph.compareAtPrice), brandCurrency)
                               : "-"}
                           </TableCell>
                           <TableCell>
@@ -543,7 +543,7 @@ export default async function ProductDetailPage({
                             <span>
                               Total ingresos:{" "}
                               <span className="font-medium text-foreground">
-                                {fmtCurrency(totalRevenue)}
+                                {formatPrice(totalRevenue, brandCurrency)}
                               </span>
                             </span>
                           </div>
@@ -575,7 +575,7 @@ export default async function ProductDetailPage({
                                   {se.unitsSold}
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  {fmtCurrency(Number(se.revenueEstimate))}
+                                  {formatPrice(Number(se.revenueEstimate), brandCurrency)}
                                 </TableCell>
                                 <TableCell>
                                   <Badge variant="outline">

@@ -29,26 +29,27 @@ export interface ScrapeResults {
 /**
  * Evalúa todas las alertas activas para una marca
  * y crea AlertEvents cuando se cumplen las condiciones.
+ * Returns the IDs of all created AlertEvent records.
  */
-export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
+export async function evaluateAlerts(results: ScrapeResults): Promise<string[]> {
   const alerts = await prisma.brandAlert.findMany({
     where: { brandId: results.brandId, isActive: true },
   })
 
-  let eventsCreated = 0
+  const createdIds: string[] = []
 
   for (const alert of alerts) {
     switch (alert.type) {
       case "NEW_PRODUCTS": {
         if (results.newProductIds.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${results.newProductIds.length} nuevo(s) producto(s) detectado(s)`,
               data: { productIds: results.newProductIds, count: results.newProductIds.length },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
@@ -56,7 +57,7 @@ export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
       case "PRICE_DROP": {
         const drops = results.priceChanges.filter((c) => c.newPrice < c.oldPrice)
         if (drops.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${drops.length} producto(s) con precio reducido`,
@@ -70,14 +71,14 @@ export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
               },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
 
       case "PRICE_CHANGE": {
         if (results.priceChanges.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${results.priceChanges.length} cambio(s) de precio detectado(s)`,
@@ -90,21 +91,21 @@ export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
               },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
 
       case "RESTOCK": {
         if (results.restockedVariantIds.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${results.restockedVariantIds.length} variante(s) reabastecida(s)`,
               data: { variantIds: results.restockedVariantIds },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
@@ -112,21 +113,21 @@ export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
       case "HIGH_VELOCITY": {
         const threshold = alert.threshold ?? 100
         if (results.totalUnitsSold > threshold) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `Alta velocidad de venta: ${results.totalUnitsSold} unidades estimadas`,
               data: { unitsSold: results.totalUnitsSold, threshold },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
 
       case "VARIANT_ADDED": {
         if (results.newVariants.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${results.newVariants.length} nueva(s) variante(s) detectada(s)`,
@@ -136,14 +137,14 @@ export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
               },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
 
       case "DISCOUNT_START": {
         if (results.discountStarts.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${results.discountStarts.length} producto(s) iniciaron descuento`,
@@ -157,60 +158,60 @@ export async function evaluateAlerts(results: ScrapeResults): Promise<number> {
               },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
 
       case "DISCOUNT_END": {
         if (results.discountEnds.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${results.discountEnds.length} producto(s) terminaron descuento`,
               data: { discounts: results.discountEnds },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
 
       case "OUT_OF_STOCK": {
         if (results.outOfStockVariantIds.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${results.outOfStockVariantIds.length} variante(s) agotada(s)`,
               data: { variantIds: results.outOfStockVariantIds },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
 
       case "PRODUCT_REMOVED": {
         if (results.removedProductIds.length > 0) {
-          await prisma.alertEvent.create({
+          const evt = await prisma.alertEvent.create({
             data: {
               alertId: alert.id,
               message: `${results.removedProductIds.length} producto(s) removido(s) del catálogo`,
               data: { productIds: results.removedProductIds },
             },
           })
-          eventsCreated++
+          createdIds.push(evt.id)
         }
         break
       }
     }
   }
 
-  if (eventsCreated > 0) {
-    console.log(`[alerts] ${eventsCreated} alert event(s) created for brand ${results.brandId}`)
+  if (createdIds.length > 0) {
+    console.log(`[alerts] ${createdIds.length} alert event(s) created for brand ${results.brandId}`)
   }
 
-  return eventsCreated
+  return createdIds
 }
 
 /**

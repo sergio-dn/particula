@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { BellOff } from "lucide-react"
+import { ExportButton } from "@/components/export-button"
 import { formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -215,7 +216,7 @@ export function EventsClient({ brands, initialEvents, initialPagination }: Props
         </div>
 
         {/* Read status pills */}
-        <div className="flex gap-1 ml-auto">
+        <div className="flex gap-1 items-center ml-auto">
           {[
             { value: "all", label: "Todos" },
             { value: "false", label: "No leidos" },
@@ -234,6 +235,14 @@ export function EventsClient({ brands, initialEvents, initialPagination }: Props
             </button>
           ))}
         </div>
+        <ExportButton
+          type="events"
+          params={{
+            brandId: currentBrand !== "all" ? currentBrand : undefined,
+            type: currentType !== "all" ? currentType : undefined,
+            days: currentDays,
+          }}
+        />
       </div>
 
       {/* Event count */}

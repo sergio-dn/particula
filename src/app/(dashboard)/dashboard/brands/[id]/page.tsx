@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { prisma } from "@/lib/prisma"
 import { formatPrice } from "@/lib/utils"
+import { ExportButton } from "@/components/export-button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -393,6 +394,7 @@ export default async function BrandDetailPage({
           <h2 className="text-lg font-semibold">
             Productos ({brand._count.products.toLocaleString()})
           </h2>
+          <ExportButton type="catalog" params={{ brandId: brand.id }} label="Exportar catálogo" />
         </div>
 
         {brand.products.length === 0 ? (

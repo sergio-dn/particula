@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TopSellersFilters } from "./top-sellers-filters"
 import { formatPrice } from "@/lib/utils"
+import { ExportButton } from "@/components/export-button"
 import { batchConvert } from "@/lib/exchange"
 
 interface SearchParams {
@@ -123,11 +124,21 @@ export default async function TopSellersPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Top Sellers</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          SKUs con mayor volumen de ventas estimado
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Top Sellers</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            SKUs con mayor volumen de ventas estimado
+          </p>
+        </div>
+        <ExportButton
+          type="top-sellers"
+          params={{
+            brandId: sp.brandId,
+            days: sp.days,
+            productType: sp.productType,
+          }}
+        />
       </div>
 
       <TopSellersFilters brands={brands} productTypes={productTypes} search={search} />

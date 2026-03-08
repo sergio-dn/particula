@@ -334,6 +334,12 @@ model BrandAlert {
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
 
+  // Notification channels
+  emailEnabled    Boolean  @default(false)
+  emailRecipients String[] @default([])
+  webhookEnabled  Boolean  @default(false)
+  webhookUrl      String?
+
   brand  Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
   events AlertEvent[]
 
@@ -349,10 +355,27 @@ model AlertEvent {
   isRead      Boolean  @default(false)
 
   alert BrandAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  notificationLogs NotificationLog[]
 
   @@index([alertId])
   @@index([isRead])
   @@index([triggeredAt])
+}
+
+model NotificationLog {
+  id           String   @id @default(cuid())
+  alertEventId String
+  channel      String   // "email" | "webhook"
+  status       String   // "sent" | "failed"
+  attempts     Int      @default(1)
+  lastError    String?
+  payload      Json?
+  createdAt    DateTime @default(now())
+
+  alertEvent AlertEvent @relation(fields: [alertEventId], references: [id], onDelete: Cascade)
+
+  @@index([alertEventId])
+  @@index([channel, status])
 }
 
 enum AlertType {
