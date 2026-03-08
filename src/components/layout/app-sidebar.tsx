@@ -12,6 +12,7 @@ import {
   Sparkles,
   Tag,
   TrendingUp,
+  Trophy,
   Zap,
 } from "lucide-react"
 import {
@@ -42,6 +43,7 @@ const navItems = [
       { href: "/dashboard/sales", label: "Ventas & Benchmark", icon: BarChart3 },
       { href: "/dashboard/launches", label: "Lanzamientos", icon: Rocket },
       { href: "/dashboard/trends", label: "Tendencias", icon: TrendingUp },
+      { href: "/dashboard/winners", label: "Winners", icon: Trophy },
     ],
   },
   {

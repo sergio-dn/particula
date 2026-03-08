@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma"
+import { PriceHistoryChart } from "@/components/charts/price-history-chart"
+import { InventoryChart } from "@/components/charts/inventory-chart"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -94,7 +96,7 @@ async function getPriceHistory(variantIds: string[]) {
   return prisma.priceHistory.findMany({
     where: { variantId: { in: variantIds } },
     orderBy: { recordedAt: "desc" },
-    take: 20,
+    take: 90,
     include: {
       variant: { select: { title: true } },
     },
@@ -106,7 +108,7 @@ async function getInventorySnapshots(variantIds: string[]) {
   return prisma.inventorySnapshot.findMany({
     where: { variantId: { in: variantIds } },
     orderBy: { snapshotAt: "desc" },
-    take: 20,
+    take: 90,
     include: {
       variant: { select: { title: true } },
     },
@@ -342,11 +344,21 @@ export default async function ProductDetailPage({
         </TabsContent>
 
         {/* Price History */}
-        <TabsContent value="prices">
+        <TabsContent value="prices" className="space-y-4">
+          <PriceHistoryChart
+            data={priceHistory.map((ph) => ({
+              date: ph.recordedAt.toISOString(),
+              price: Number(ph.price),
+              compareAtPrice: ph.compareAtPrice
+                ? Number(ph.compareAtPrice)
+                : null,
+              variantTitle: ph.variant.title,
+            }))}
+          />
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Historial de precios (ultimos 20 registros)
+                Historial de precios (ultimos 90 registros)
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -429,11 +441,18 @@ export default async function ProductDetailPage({
         </TabsContent>
 
         {/* Inventory / Availability History */}
-        <TabsContent value="inventory">
+        <TabsContent value="inventory" className="space-y-4">
+          <InventoryChart
+            data={inventorySnapshots.map((snap) => ({
+              date: snap.snapshotAt.toISOString(),
+              quantity: snap.quantity,
+              isAvailable: snap.isAvailable,
+            }))}
+          />
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Historial de inventario (ultimos 20 registros)
+                Historial de inventario (ultimos 90 registros)
               </CardTitle>
             </CardHeader>
             <CardContent>
