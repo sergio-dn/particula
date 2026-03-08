@@ -5,37 +5,32 @@ import { prisma } from "@/lib/prisma"
  * GET /api/events
  *
  * Query params:
- * - brandId (required)
- * - productId (optional)
+ * - brandId (optional, filter by brand)
  * - type (optional, alert type filter)
  * - from (optional, ISO date)
  * - to (optional, ISO date)
  * - isRead (optional, "true"/"false")
  * - page (optional, default 1)
- * - limit (optional, default 50, max 200)
+ * - limit (optional, default 20, max 200)
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const brandId = searchParams.get("brandId")
-
-  if (!brandId) {
-    return NextResponse.json({ error: "brandId is required" }, { status: 400 })
-  }
-
   const type = searchParams.get("type")
   const isRead = searchParams.get("isRead")
   const from = searchParams.get("from")
   const to = searchParams.get("to")
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10))
-  const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)))
+  const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)))
   const skip = (page - 1) * limit
 
-  // AlertEvents are linked to BrandAlerts which belong to a Brand
+  // Build filter — brandId and type are optional
+  const alertFilter: Record<string, unknown> = {}
+  if (brandId) alertFilter.brandId = brandId
+  if (type) alertFilter.type = type
+
   const where: Record<string, unknown> = {
-    alert: {
-      brandId,
-      ...(type ? { type } : {}),
-    },
+    alert: alertFilter,
   }
 
   if (isRead !== null && isRead !== undefined && isRead !== "") {
@@ -54,7 +49,11 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         alert: {
-          select: { type: true, brandId: true },
+          select: {
+            type: true,
+            brandId: true,
+            brand: { select: { name: true } },
+          },
         },
       },
       orderBy: { triggeredAt: "desc" },
@@ -69,6 +68,7 @@ export async function GET(req: NextRequest) {
       id: event.id,
       type: event.alert.type,
       brandId: event.alert.brandId,
+      brandName: event.alert.brand.name,
       message: event.message,
       data: event.data,
       triggeredAt: event.triggeredAt,
