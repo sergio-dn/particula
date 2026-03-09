@@ -6,13 +6,14 @@
  *     tags: [Brands]
  *     responses:
  *       200:
- *         description: Scrape jobs creados
+ *         description: Resultados del scraping
  */
 import { NextResponse } from "next/server"
-import { after } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
 import { requireRole } from "@/lib/auth-guard"
+
+export const maxDuration = 300 // 5 minutos
 
 export async function POST() {
   const { error } = await requireRole("ADMIN")
@@ -36,21 +37,25 @@ export async function POST() {
     )
   )
 
-  // Ejecutar scraping secuencial en background (evita saturar conexiones)
-  after(async () => {
-    for (const brand of brands) {
-      try {
-        await scrapeBrand(brand.id)
-      } catch (err) {
-        console.error(`[scrape-all] error for ${brand.domain}:`, err)
-      }
-      // Pausa entre marcas para no saturar
-      await new Promise((r) => setTimeout(r, 2000))
+  // Ejecutar scraping secuencial inline (esperamos resultados)
+  const results: Array<{ domain: string; status: string; error?: string }> = []
+
+  for (const brand of brands) {
+    try {
+      const result = await scrapeBrand(brand.id)
+      results.push({ domain: brand.domain, status: result.status, error: result.error })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[scrape-all] error for ${brand.domain}:`, message)
+      results.push({ domain: brand.domain, status: "FAILED", error: message })
     }
-  })
+    // Pausa entre marcas para no saturar
+    await new Promise((r) => setTimeout(r, 2000))
+  }
 
   return NextResponse.json({
-    message: `Scraping iniciado para ${brands.length} marcas`,
+    message: `Scraping completado para ${brands.length} marcas`,
     jobIds: jobs.map((j) => j.id),
+    results,
   })
 }

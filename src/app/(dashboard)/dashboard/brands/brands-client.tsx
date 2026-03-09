@@ -195,16 +195,19 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
   }
 
   async function handleTriggerScrape(id: string) {
+    const brand = brands.find((b) => b.id === id)
+    toast.info(`Scraping ${brand?.domain ?? "marca"}... esto puede tardar un minuto`)
     try {
       const res = await fetch(`/api/brands/${id}/scrape`, { method: "POST" })
-      if (!res.ok) {
-        toast.error("Error al iniciar scraping")
+      const data = await res.json()
+      if (!res.ok || data.status === "FAILED") {
+        toast.error(`Error en scraping: ${data.error ?? "desconocido"}`)
         return
       }
-      toast.info("Scraping iniciado...")
+      toast.success(`Scraping completado: ${data.productsFound ?? 0} productos`)
       router.refresh()
     } catch {
-      toast.error("Error de conexión al iniciar scraping")
+      toast.error("Error de conexión al hacer scraping")
     }
   }
 
@@ -232,10 +235,14 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
             variant="outline"
             className="gap-2"
             onClick={async () => {
+              toast.info("Scraping de todas las marcas... esto puede tardar varios minutos")
               try {
                 const res = await fetch("/api/brands/scrape-all", { method: "POST" })
+                const data = await res.json()
                 if (res.ok) {
-                  toast.info("Scraping iniciado para todas las marcas...")
+                  const ok = data.results?.filter((r: { status: string }) => r.status === "COMPLETED").length ?? 0
+                  const fail = data.results?.filter((r: { status: string }) => r.status === "FAILED").length ?? 0
+                  toast.success(`Scraping completado: ${ok} exitosos, ${fail} fallidos`)
                   router.refresh()
                 } else {
                   toast.error("Error al iniciar scraping masivo")

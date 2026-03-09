@@ -36,7 +36,6 @@
  *         description: Permisos insuficientes
  */
 import { NextRequest, NextResponse } from "next/server"
-import { after } from "next/server"
 import { revalidateTag } from "next/cache"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
@@ -44,6 +43,8 @@ import { detectPlatform } from "@/lib/detectors/platform-detector"
 import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
 import { createDefaultAlerts } from "@/lib/pipeline/alerts"
 import { requireRole } from "@/lib/auth-guard"
+
+export const maxDuration = 300 // 5 minutos — scraping puede tardar
 
 const createBrandSchema = z.object({
   name: z.string().min(1).max(100),
@@ -146,20 +147,14 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // Ejecutar scraping en background con retry
+  // Ejecutar scraping inline (no usar after() — se corta en serverless)
+  let scrapeResult = null
   if (isShopify) {
-    after(async () => {
-      try {
-        const result = await scrapeBrand(brand.id)
-        if (result.status === "FAILED" && result.error?.includes("fetch")) {
-          console.log(`[scrape] retrying ${brand.domain} after fetch failure`)
-          await new Promise((r) => setTimeout(r, 5000))
-          await scrapeBrand(brand.id)
-        }
-      } catch (err) {
-        console.error(`[scrape] unhandled error for ${brand.domain}:`, err)
-      }
-    })
+    try {
+      scrapeResult = await scrapeBrand(brand.id)
+    } catch (err) {
+      console.error(`[scrape] error for ${brand.domain}:`, err)
+    }
   }
 
   revalidateTag("brands")
