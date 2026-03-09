@@ -1,8 +1,23 @@
+/**
+ * @swagger
+ * /api/brands/{id}:
+ *   get:
+ *     summary: Obtener detalle de marca
+ *     tags: [Brands]
+ *   patch:
+ *     summary: Actualizar marca
+ *     tags: [Brands]
+ *   delete:
+ *     summary: Eliminar marca
+ *     tags: [Brands]
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { after } from "next/server"
+import { revalidateTag } from "next/cache"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
+import { requireRole } from "@/lib/auth-guard"
 
 const updateBrandSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -16,6 +31,8 @@ const updateBrandSchema = z.object({
 
 // GET /api/brands/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
   const { id } = await params
   const brand = await prisma.brand.findUnique({
     where: { id },
@@ -35,6 +52,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 // PATCH /api/brands/[id]
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { error } = await requireRole("EDITOR")
+  if (error) return error
   const { id } = await params
   const body = await req.json()
   const parsed = updateBrandSchema.safeParse(body)
@@ -48,13 +67,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     data: parsed.data,
   })
 
+  revalidateTag("brands")
+  revalidateTag("dashboard-stats")
+
   return NextResponse.json(brand)
 }
 
 // DELETE /api/brands/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { error } = await requireRole("ADMIN")
+  if (error) return error
   const { id } = await params
   await prisma.brand.delete({ where: { id } })
+  revalidateTag("brands")
+  revalidateTag("dashboard-stats")
   return NextResponse.json({ ok: true })
 }
 

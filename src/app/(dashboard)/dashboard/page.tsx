@@ -2,47 +2,60 @@ import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Building2, Flame, Package, Rocket } from "lucide-react"
 import Link from "next/link"
+import { unstable_cache } from "next/cache"
 
-async function getStats() {
-  const [totalBrands, totalProducts, recentLaunches, activeScrapeJobs] = await Promise.all([
-    prisma.brand.count({ where: { isActive: true } }),
-    prisma.product.count({ where: { isActive: true } }),
-    prisma.product.count({
-      where: {
-        isLaunch: true,
-        launchDate: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+const getStats = unstable_cache(
+  async () => {
+    const [totalBrands, totalProducts, recentLaunches, activeScrapeJobs] = await Promise.all([
+      prisma.brand.count({ where: { isActive: true } }),
+      prisma.product.count({ where: { isActive: true } }),
+      prisma.product.count({
+        where: {
+          isLaunch: true,
+          launchDate: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+      prisma.scrapeJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } }),
+    ])
+
+    return { totalBrands, totalProducts, recentLaunches, activeScrapeJobs }
+  },
+  ["dashboard-stats"],
+  { revalidate: 60, tags: ["dashboard-stats"] },
+)
+
+const getRecentBrands = unstable_cache(
+  async () => {
+    return prisma.brand.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, name: true, domain: true, logoUrl: true, shopifyStore: true, category: true },
+    })
+  },
+  ["dashboard-recent-brands"],
+  { revalidate: 60, tags: ["dashboard-stats", "brands"] },
+)
+
+const getRecentLaunches = unstable_cache(
+  async () => {
+    return prisma.product.findMany({
+      where: { isLaunch: true },
+      orderBy: { launchDate: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        title: true,
+        imageUrl: true,
+        launchDate: true,
+        productType: true,
+        brand: { select: { name: true } },
       },
-    }),
-    prisma.scrapeJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } }),
-  ])
-
-  return { totalBrands, totalProducts, recentLaunches, activeScrapeJobs }
-}
-
-async function getRecentBrands() {
-  return prisma.brand.findMany({
-    where: { isActive: true },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-    select: { id: true, name: true, domain: true, logoUrl: true, shopifyStore: true, category: true },
-  })
-}
-
-async function getRecentLaunches() {
-  return prisma.product.findMany({
-    where: { isLaunch: true },
-    orderBy: { launchDate: "desc" },
-    take: 5,
-    select: {
-      id: true,
-      title: true,
-      imageUrl: true,
-      launchDate: true,
-      productType: true,
-      brand: { select: { name: true } },
-    },
-  })
-}
+    })
+  },
+  ["dashboard-recent-launches"],
+  { revalidate: 60, tags: ["dashboard-stats"] },
+)
 
 export default async function DashboardPage() {
   const [stats, recentBrands, recentLaunches] = await Promise.all([

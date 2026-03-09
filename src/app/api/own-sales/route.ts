@@ -1,7 +1,21 @@
+/**
+ * @swagger
+ * /api/own-sales:
+ *   get:
+ *     summary: Obtener ventas propias
+ *     tags: [OwnSales]
+ *     responses:
+ *       200:
+ *         description: Datos de ventas propias
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireRole } from "@/lib/auth-guard"
 
 export async function GET(req: NextRequest) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
+
   const { searchParams } = new URL(req.url)
   const brandId = searchParams.get("brandId")
   const from = searchParams.get("from")

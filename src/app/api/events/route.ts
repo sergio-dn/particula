@@ -1,5 +1,16 @@
+/**
+ * @swagger
+ * /api/events:
+ *   get:
+ *     summary: Listar eventos de alertas
+ *     tags: [Events]
+ *     responses:
+ *       200:
+ *         description: Eventos paginados
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireRole } from "@/lib/auth-guard"
 
 /**
  * GET /api/events
@@ -14,6 +25,9 @@ import { prisma } from "@/lib/prisma"
  * - limit (optional, default 20, max 200)
  */
 export async function GET(req: NextRequest) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
+
   const { searchParams } = new URL(req.url)
   const brandId = searchParams.get("brandId")
   const type = searchParams.get("type")

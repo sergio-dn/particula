@@ -1,6 +1,17 @@
+/**
+ * @swagger
+ * /api/own-sales/import:
+ *   post:
+ *     summary: Importar ventas propias desde CSV
+ *     tags: [OwnSales]
+ *     responses:
+ *       200:
+ *         description: Importación completada
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod/v4"
+import { requireRole } from "@/lib/auth-guard"
 
 const RowSchema = z.object({
   sku: z.string().min(1),
@@ -15,6 +26,9 @@ const ImportSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  const { error } = await requireRole("EDITOR")
+  if (error) return error
+
   try {
     const body = await req.json()
     const parsed = ImportSchema.safeParse(body)

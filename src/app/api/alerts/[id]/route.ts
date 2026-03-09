@@ -1,10 +1,23 @@
+/**
+ * @swagger
+ * /api/alerts/{id}:
+ *   get:
+ *     summary: Obtener configuración de alerta
+ *     tags: [Alerts]
+ *   patch:
+ *     summary: Actualizar configuración de alerta
+ *     tags: [Alerts]
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireRole } from "@/lib/auth-guard"
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const { error } = await requireRole("ADMIN")
+  if (error) return error
   const { id } = await params
   const body = await req.json()
 
@@ -39,6 +52,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
   const { id } = await params
 
   const alert = await prisma.brandAlert.findUnique({

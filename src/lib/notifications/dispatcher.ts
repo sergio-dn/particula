@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { sendAlertDigest } from "./email"
 import { sendWebhook } from "./webhook"
+import { notificationLogger } from "@/lib/logger"
 
 /**
  * Dispatches notifications (email + webhook) for newly created AlertEvents.
@@ -69,8 +70,9 @@ export async function dispatchNotifications(
       }).catch(() => {}) // don't fail pipeline on log error
     }
 
-    console.log(
-      `[notifications] Email ${result.success ? "sent" : "failed"} for ${brandName}: ${emailEvents.length} events → ${emailRecipients.size} recipients`,
+    notificationLogger.info(
+      { channel: "email", success: result.success, brandName, events: emailEvents.length, recipients: emailRecipients.size },
+      `email ${result.success ? "sent" : "failed"}`,
     )
   }
 
@@ -114,8 +116,9 @@ export async function dispatchNotifications(
       }).catch(() => {})
     }
 
-    console.log(
-      `[notifications] Webhook ${result.success ? "sent" : "failed"} to ${url}: ${groupEvents.length} events, ${result.attempts} attempts`,
+    notificationLogger.info(
+      { channel: "webhook", success: result.success, url, events: groupEvents.length, attempts: result.attempts },
+      `webhook ${result.success ? "sent" : "failed"}`,
     )
   }
 }

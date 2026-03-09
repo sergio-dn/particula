@@ -227,6 +227,7 @@ model SalesEstimate {
   @@unique([variantId, date])
   @@index([brandId, date])
   @@index([date])
+  @@index([brandId, date, revenueEstimate])
 }
 
 // ──────────────────────────────────────────────

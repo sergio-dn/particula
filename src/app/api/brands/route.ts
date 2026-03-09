@@ -1,10 +1,49 @@
+/**
+ * @swagger
+ * /api/brands:
+ *   get:
+ *     summary: Listar marcas
+ *     tags: [Brands]
+ *     parameters:
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: isActive
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Array de marcas
+ *   post:
+ *     summary: Crear marca
+ *     tags: [Brands]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, domain]
+ *             properties:
+ *               name: { type: string }
+ *               domain: { type: string }
+ *     responses:
+ *       201:
+ *         description: Marca creada
+ *       403:
+ *         description: Permisos insuficientes
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { after } from "next/server"
+import { revalidateTag } from "next/cache"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { detectPlatform } from "@/lib/detectors/platform-detector"
 import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
 import { createDefaultAlerts } from "@/lib/pipeline/alerts"
+import { requireRole } from "@/lib/auth-guard"
 
 const createBrandSchema = z.object({
   name: z.string().min(1).max(100),
@@ -17,6 +56,9 @@ const createBrandSchema = z.object({
 
 // GET /api/brands — list all brands
 export async function GET(req: NextRequest) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
+
   const { searchParams } = new URL(req.url)
   const category = searchParams.get("category")
   const isActive = searchParams.get("isActive")
@@ -42,6 +84,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/brands — create new brand
 export async function POST(req: NextRequest) {
+  const { error } = await requireRole("EDITOR")
+  if (error) return error
+
   const body = await req.json()
   const parsed = createBrandSchema.safeParse(body)
 
@@ -107,6 +152,9 @@ export async function POST(req: NextRequest) {
       await scrapeBrand(brand.id)
     })
   }
+
+  revalidateTag("brands")
+  revalidateTag("dashboard-stats")
 
   return NextResponse.json(
     { ...brand, scrapeJobId: scrapeJob.id, shopifyDetected: isShopify, platformDetection: { platform: detection.platform, confidence: detection.confidence } },

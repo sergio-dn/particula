@@ -1,5 +1,21 @@
+/**
+ * @swagger
+ * /api/winners:
+ *   get:
+ *     summary: Obtener winner scores
+ *     tags: [Winners]
+ *     parameters:
+ *       - in: query
+ *         name: brandId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Winner scores
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireRole } from "@/lib/auth-guard"
 
 /**
  * GET /api/winners
@@ -11,6 +27,9 @@ import { prisma } from "@/lib/prisma"
  * - limit (optional, default 20, max 100)
  */
 export async function GET(req: NextRequest) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
+
   const { searchParams } = new URL(req.url)
   const brandId = searchParams.get("brandId")
 

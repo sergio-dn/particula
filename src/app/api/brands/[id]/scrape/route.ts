@@ -1,12 +1,25 @@
+/**
+ * @swagger
+ * /api/brands/{id}/scrape:
+ *   post:
+ *     summary: Trigger scraping manual de una marca
+ *     tags: [Brands]
+ *     responses:
+ *       200:
+ *         description: Scrape job creado
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { after } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
+import { requireRole } from "@/lib/auth-guard"
 
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { error } = await requireRole("EDITOR")
+  if (error) return error
   const { id } = await params
   const brand = await prisma.brand.findUnique({ where: { id } })
   if (!brand) return NextResponse.json({ error: "Not found" }, { status: 404 })

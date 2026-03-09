@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { scrapeBrand } from "@/lib/pipeline/scrape-brand"
+import { cronLogger } from "@/lib/logger"
 
 // Vercel Pro: hasta 300s. Hobby: hasta 60s.
 export const maxDuration = 300
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
   const succeeded = results.filter((r) => r.status === "COMPLETED").length
   const failed = results.filter((r) => r.status === "FAILED").length
 
-  console.log(`[cron] Scrape complete: ${succeeded} succeeded, ${failed} failed out of ${brands.length} brands`)
+  cronLogger.info({ succeeded, failed, total: brands.length }, "scrape cron complete")
 
   return NextResponse.json({
     scraped: brands.length,

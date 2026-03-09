@@ -1,7 +1,21 @@
+/**
+ * @swagger
+ * /api/webhooks/test:
+ *   post:
+ *     summary: Enviar webhook de prueba
+ *     tags: [Webhooks]
+ *     responses:
+ *       200:
+ *         description: Resultado del envío
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { sendWebhook } from "@/lib/notifications/webhook"
+import { requireRole } from "@/lib/auth-guard"
 
 export async function POST(req: NextRequest) {
+  const { error } = await requireRole("EDITOR")
+  if (error) return error
+
   const { url } = await req.json()
 
   if (!url || typeof url !== "string") {

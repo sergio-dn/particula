@@ -25,6 +25,8 @@ import { computeBrandWinnerScores } from "@/lib/estimators/winner-score"
 import { evaluateAlerts, type ScrapeResults } from "@/lib/pipeline/alerts"
 import { dispatchNotifications } from "@/lib/notifications/dispatcher"
 import { diffSnapshots, filterEvents, diffSummary } from "@/lib/pipeline/snapshot-diff"
+import { pipelineLogger } from "@/lib/logger"
+import { revalidateTag } from "next/cache"
 
 export interface ScrapeResult {
   brandId: string
@@ -58,6 +60,9 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
     data: { status: "RUNNING", startedAt: new Date() },
   })
 
+  const log = pipelineLogger.child({ brandId, domain: brand.domain })
+  const startTime = Date.now()
+
   try {
     let productsFound = 0
     let variantsFound = 0
@@ -70,14 +75,14 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
       // Detectar inventory tracking en primer scrape (o si aún no se detectó)
       let inventoryTracking = brand.inventoryTracking
       if (inventoryTracking === null) {
-        console.log(`[pipeline] ${brand.domain}: detecting inventory tracking...`)
+        log.info("detecting inventory tracking")
         const detection = await detectInventoryTracking(brand.domain)
         inventoryTracking = detection.tracksInventory
         await prisma.brand.update({
           where: { id: brandId },
           data: { inventoryTracking },
         })
-        console.log(`[pipeline] ${brand.domain}: inventoryTracking = ${inventoryTracking}`)
+        log.info({ inventoryTracking }, "inventory tracking detected")
       }
 
       const result = await processShopifyBrand(brand.id, brand.domain, inventoryTracking)
@@ -101,7 +106,7 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
 
     // Ejecutar diffing de snapshots para detectar eventos
     const diff = await diffSnapshots(brandId)
-    console.log(diffSummary(diff))
+    log.info({ diff: diffSummary(diff) }, "snapshot diff complete")
 
     // Extraer datos del diff para alertas
     const outOfStockEvents = filterEvents(diff, "OUT_OF_STOCK")
@@ -152,12 +157,12 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
 
     // Dispatch email/webhook notifications
     await dispatchNotifications(brandId, alertEventIds).catch((e) =>
-      console.error(`[pipeline] Notification dispatch failed:`, e),
+      log.error({ err: e }, "notification dispatch failed"),
     )
 
     // Calcular winner scores
     const scoresCreated = await computeBrandWinnerScores(brandId, yesterday)
-    console.log(`[pipeline] ${brand.domain}: ${scoresCreated} winner scores calculated`)
+    log.info({ scoresCreated }, "winner scores calculated")
 
     // Marcar como completado
     await prisma.scrapeJob.updateMany({
@@ -165,8 +170,16 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
       data: { status: "COMPLETED", completedAt: new Date() },
     })
 
-    console.log(
-      `[pipeline] ${brand.domain}: ${productsFound} products, ${variantsFound} variants, ${newProductsCount} new, ${priceChanges.length} price changes`
+    // Invalidar caches
+    revalidateTag("dashboard-stats")
+    revalidateTag("top-sellers")
+    revalidateTag("sales")
+    revalidateTag("winners")
+
+    const durationMs = Date.now() - startTime
+    log.info(
+      { productsFound, variantsFound, newProducts: newProductsCount, priceChanges: priceChanges.length, durationMs },
+      "scrape completed"
     )
 
     return {
@@ -183,7 +196,8 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
       where: { brandId, status: "RUNNING" },
       data: { status: "FAILED", completedAt: new Date(), error: message },
     })
-    console.error(`[pipeline] ${brand.domain} failed:`, message)
+    const durationMs = Date.now() - startTime
+    log.error({ err: message, durationMs }, "scrape failed")
     return {
       brandId,
       productsFound: 0,
@@ -380,7 +394,7 @@ async function processShopifyBrand(
       }),
     )
 
-    console.log(`[pipeline] ${domain}: running cart probes on ${probeVariants.filter((v) => v.isAvailable).length} available variants...`)
+    pipelineLogger.info({ domain, availableVariants: probeVariants.filter((v) => v.isAvailable).length }, "running cart probes")
     const probeResult = await batchProbeInventory(domain, probeVariants)
 
     // Actualizar snapshots con datos reales del cart probe
@@ -407,8 +421,9 @@ async function processShopifyBrand(
       probesApplied++
     }
 
-    console.log(
-      `[pipeline] ${domain}: cart probe complete — ${probeResult.probed} probed, ${probesApplied} snapshots updated`,
+    pipelineLogger.info(
+      { domain, probed: probeResult.probed, snapshotsUpdated: probesApplied },
+      "cart probe complete",
     )
   }
 

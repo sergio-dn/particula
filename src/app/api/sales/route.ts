@@ -1,5 +1,21 @@
+/**
+ * @swagger
+ * /api/sales:
+ *   get:
+ *     summary: Obtener estimaciones de ventas
+ *     tags: [Sales]
+ *     parameters:
+ *       - in: query
+ *         name: brandId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Datos de ventas paginados
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireRole } from "@/lib/auth-guard"
 
 /**
  * GET /api/sales
@@ -14,6 +30,9 @@ import { prisma } from "@/lib/prisma"
  * - limit (optional, default 50, max 200)
  */
 export async function GET(req: NextRequest) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
+
   const { searchParams } = new URL(req.url)
   const brandId = searchParams.get("brandId")
 

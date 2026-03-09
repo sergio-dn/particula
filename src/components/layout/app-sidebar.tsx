@@ -3,7 +3,9 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
+  Activity,
   BarChart3,
+  BookOpen,
   Building2,
   Flame,
   LayoutDashboard,
@@ -13,6 +15,7 @@ import {
   Tag,
   TrendingUp,
   Trophy,
+  Users,
   Zap,
 } from "lucide-react"
 import {
@@ -56,7 +59,7 @@ const navItems = [
   },
 ]
 
-export function AppSidebar() {
+export function AppSidebar({ role }: { role?: string }) {
   const pathname = usePathname()
 
   return (
@@ -118,18 +121,48 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="pb-4">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link href="/dashboard/settings" className="flex items-center gap-2.5">
-                <Settings className="h-4 w-4" />
-                <span>Configuración</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+      {(role === "ADMIN" || role === "EDITOR") && (
+        <SidebarFooter className="pb-4">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={pathname === "/dashboard/settings"}>
+                <Link href="/dashboard/settings" className="flex items-center gap-2.5">
+                  <Settings className="h-4 w-4" />
+                  <span>Configuración</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            {role === "ADMIN" && (
+              <>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname === "/dashboard/settings/users"}>
+                    <Link href="/dashboard/settings/users" className="flex items-center gap-2.5">
+                      <Users className="h-4 w-4" />
+                      <span>Usuarios</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname === "/dashboard/settings/health"}>
+                    <Link href="/dashboard/settings/health" className="flex items-center gap-2.5">
+                      <Activity className="h-4 w-4" />
+                      <span>Salud</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </>
+            )}
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={pathname === "/dashboard/docs"}>
+                <Link href="/dashboard/docs" className="flex items-center gap-2.5">
+                  <BookOpen className="h-4 w-4" />
+                  <span>API Docs</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      )}
     </Sidebar>
   )
 }

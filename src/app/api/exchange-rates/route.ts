@@ -1,6 +1,23 @@
+/**
+ * @swagger
+ * /api/exchange-rates:
+ *   get:
+ *     summary: Listar tasas de cambio
+ *     tags: [ExchangeRates]
+ *     responses:
+ *       200:
+ *         description: Array de tasas
+ *   post:
+ *     summary: Crear tasa de cambio
+ *     tags: [ExchangeRates]
+ *     responses:
+ *       201:
+ *         description: Tasa creada
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
+import { requireRole } from "@/lib/auth-guard"
 
 const createRateSchema = z
   .object({
@@ -16,6 +33,9 @@ const createRateSchema = z
 
 // GET /api/exchange-rates?from=EUR&to=USD&limit=50
 export async function GET(req: NextRequest) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
+
   const { searchParams } = new URL(req.url)
   const from = searchParams.get("from")
   const to = searchParams.get("to")
@@ -35,6 +55,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/exchange-rates
 export async function POST(req: NextRequest) {
+  const { error: authError } = await requireRole("ADMIN")
+  if (authError) return authError
+
   const body = await req.json()
   const parsed = createRateSchema.safeParse(body)
 

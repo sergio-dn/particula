@@ -1,5 +1,23 @@
+/**
+ * @swagger
+ * /api/export/{type}:
+ *   get:
+ *     summary: Exportar datos como CSV
+ *     tags: [Export]
+ *     parameters:
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [top-sellers, events, catalog]
+ *     responses:
+ *       200:
+ *         description: Archivo CSV
+ */
 import { NextRequest } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireRole } from "@/lib/auth-guard"
 
 function toCsv(headers: string[], rows: string[][]): string {
   const escape = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`
@@ -154,6 +172,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ type: string }> },
 ) {
+  const { error } = await requireRole("VIEWER")
+  if (error) return error
+
   const { type } = await params
   const sp = new URL(req.url).searchParams
 
