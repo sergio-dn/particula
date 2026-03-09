@@ -22,17 +22,31 @@ import {
 interface CategoryComboboxProps {
   categories: string[]
   selected: string | null
-  /** Función que genera la URL para un productType dado (null = sin filtro) */
-  buildUrl: (productType: string | null) => string
+  /** Parámetros base para construir la URL (sin productType) */
+  baseParams: { days: string; country?: string; brandId?: string }
 }
 
-export function CategoryCombobox({ categories, selected, buildUrl }: CategoryComboboxProps) {
+function buildUrl(params: {
+  days: string
+  country?: string
+  brandId?: string
+  productType?: string
+}) {
+  const parts: string[] = []
+  if (params.days) parts.push(`days=${params.days}`)
+  if (params.country) parts.push(`country=${params.country}`)
+  if (params.brandId) parts.push(`brandId=${params.brandId}`)
+  if (params.productType) parts.push(`productType=${encodeURIComponent(params.productType)}`)
+  return `/dashboard/launches${parts.length > 0 ? `?${parts.join("&")}` : ""}`
+}
+
+export function CategoryCombobox({ categories, selected, baseParams }: CategoryComboboxProps) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
 
   function handleSelect(value: string | null) {
     setOpen(false)
-    router.push(buildUrl(value))
+    router.push(buildUrl({ ...baseParams, productType: value ?? undefined }))
   }
 
   return (

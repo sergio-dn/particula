@@ -209,14 +209,7 @@ export default async function LaunchesPage({
         <CategoryCombobox
           categories={productTypes}
           selected={sp.productType ?? null}
-          buildUrl={(pt) =>
-            buildUrl({
-              days: baseDays,
-              country: sp.country,
-              brandId: sp.brandId,
-              productType: pt ?? undefined,
-            })
-          }
+          baseParams={{ days: baseDays, country: sp.country, brandId: sp.brandId }}
         />
       )}
 
