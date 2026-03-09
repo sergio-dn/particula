@@ -68,41 +68,52 @@ export default async function LaunchesPage({
   searchParams: Promise<SearchParams>
 }) {
   const sp = await searchParams
-  const [launches, brands] = await Promise.all([getLaunches(sp), getBrands()])
 
-  const countries = [...new Set(brands.map((b) => b.country).filter(Boolean))] as string[]
+  let launches: Awaited<ReturnType<typeof getLaunches>> = []
+  let brands: Awaited<ReturnType<typeof getBrands>> = []
+  let filteredBrands: typeof brands = []
+  let productTypes: string[] = []
+  let countries: string[] = []
 
-  // Get brands that have at least 1 launch in the current result set (before brand filter)
-  const days = parseInt(sp.days ?? "30", 10)
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-  const launchBrands = await prisma.product.findMany({
-    where: {
-      isLaunch: true,
-      launchDate: { gte: since },
-      ...(sp.country ? { brand: { country: sp.country.toUpperCase() } } : {}),
-    },
-    select: { brandId: true },
-    distinct: ["brandId"],
-  })
-  const launchBrandIds = new Set(launchBrands.map((l) => l.brandId))
-  const filteredBrands = brands.filter((b) => launchBrandIds.has(b.id))
+  try {
+    ;[launches, brands] = await Promise.all([getLaunches(sp), getBrands()])
 
-  // Get distinct product types from current launches (before productType filter)
-  const launchProductTypes = await prisma.product.findMany({
-    where: {
-      isLaunch: true,
-      launchDate: { gte: since },
-      productType: { not: null },
-      ...(sp.brandId ? { brandId: sp.brandId } : {}),
-      ...(sp.country ? { brand: { country: sp.country.toUpperCase() } } : {}),
-    },
-    select: { productType: true },
-    distinct: ["productType"],
-  })
-  const productTypes = launchProductTypes
-    .map((p) => p.productType)
-    .filter(Boolean) as string[]
-  productTypes.sort()
+    countries = [...new Set(brands.map((b) => b.country).filter(Boolean))] as string[]
+
+    // Get brands that have at least 1 launch in the current result set (before brand filter)
+    const days = parseInt(sp.days ?? "30", 10)
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    const launchBrands = await prisma.product.findMany({
+      where: {
+        isLaunch: true,
+        launchDate: { gte: since },
+        ...(sp.country ? { brand: { country: sp.country.toUpperCase() } } : {}),
+      },
+      select: { brandId: true },
+      distinct: ["brandId"],
+    })
+    const launchBrandIds = new Set(launchBrands.map((l) => l.brandId))
+    filteredBrands = brands.filter((b) => launchBrandIds.has(b.id))
+
+    // Get distinct product types from current launches (before productType filter)
+    const launchProductTypes = await prisma.product.findMany({
+      where: {
+        isLaunch: true,
+        launchDate: { gte: since },
+        productType: { not: null },
+        ...(sp.brandId ? { brandId: sp.brandId } : {}),
+        ...(sp.country ? { brand: { country: sp.country.toUpperCase() } } : {}),
+      },
+      select: { productType: true },
+      distinct: ["productType"],
+    })
+    productTypes = launchProductTypes
+      .map((p) => p.productType)
+      .filter(Boolean) as string[]
+    productTypes.sort()
+  } catch (err) {
+    console.error("[launches] error loading data:", err)
+  }
 
   const baseDays = sp.days ?? "30"
 
@@ -274,12 +285,12 @@ export default async function LaunchesPage({
                       <div className="flex items-center gap-2">
                         {minPrice && (
                           <span className="text-sm font-medium">
-                            {formatPrice(minPrice, product.brand.currency)}
+                            {formatPrice(minPrice, product.brand?.currency)}
                           </span>
                         )}
                         {compareAt && Number(compareAt) > Number(minPrice) && (
                           <span className="text-xs text-muted-foreground line-through">
-                            {formatPrice(compareAt, product.brand.currency)}
+                            {formatPrice(compareAt, product.brand?.currency)}
                           </span>
                         )}
                       </div>
