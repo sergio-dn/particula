@@ -279,34 +279,34 @@ export function ExchangeRatesClient({ rates }: Props) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-2 font-medium">De</th>
-                    <th className="pb-2 font-medium">A</th>
-                    <th className="pb-2 font-medium text-right">Tasa</th>
-                    <th className="pb-2 font-medium">Fecha efectiva</th>
-                    <th className="pb-2 font-medium">Fuente</th>
-                    <th className="pb-2 font-medium">Creado</th>
+                    <th className="pb-2 pr-4 font-medium">De</th>
+                    <th className="pb-2 pr-4 font-medium">A</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Tasa</th>
+                    <th className="pb-2 pr-4 font-medium">Fecha efectiva</th>
+                    <th className="pb-2 pr-4 font-medium">Fuente</th>
+                    <th className="pb-2 pr-4 font-medium">Creado</th>
                     <th className="pb-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {rates.map((r) => (
                     <tr key={r.id} className="hover:bg-muted/50">
-                      <td className="py-2 font-mono">{r.fromCurrency}</td>
-                      <td className="py-2 font-mono">{r.toCurrency}</td>
-                      <td className="py-2 text-right font-mono">
+                      <td className="py-2 pr-4 font-mono">{r.fromCurrency}</td>
+                      <td className="py-2 pr-4 font-mono">{r.toCurrency}</td>
+                      <td className="py-2 pr-4 text-right font-mono">
                         {Number(r.rate).toFixed(
                           Number(r.rate) < 0.01 ? 6 : Number(r.rate) < 1 ? 4 : 2,
                         )}
                       </td>
-                      <td className="py-2">
+                      <td className="py-2 pr-4">
                         {new Date(r.effectiveDate).toLocaleDateString("es-CL")}
                       </td>
-                      <td className="py-2">
+                      <td className="py-2 pr-4">
                         <Badge variant="outline" className="text-[10px]">
                           {r.source}
                         </Badge>
                       </td>
-                      <td className="py-2 text-muted-foreground text-xs">
+                      <td className="py-2 pr-4 text-muted-foreground text-xs">
                         {new Date(r.createdAt).toLocaleDateString("es-CL")}
                       </td>
                       <td className="py-2 text-right">
