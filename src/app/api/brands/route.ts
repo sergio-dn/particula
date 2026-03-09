@@ -146,10 +146,19 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // Ejecutar scraping en background (no bloquea la respuesta)
+  // Ejecutar scraping en background con retry
   if (isShopify) {
     after(async () => {
-      await scrapeBrand(brand.id)
+      try {
+        const result = await scrapeBrand(brand.id)
+        if (result.status === "FAILED" && result.error?.includes("fetch")) {
+          console.log(`[scrape] retrying ${brand.domain} after fetch failure`)
+          await new Promise((r) => setTimeout(r, 5000))
+          await scrapeBrand(brand.id)
+        }
+      } catch (err) {
+        console.error(`[scrape] unhandled error for ${brand.domain}:`, err)
+      }
     })
   }
 

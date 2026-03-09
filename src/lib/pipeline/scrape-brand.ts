@@ -91,6 +91,15 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
       newProductsCount = result.newProductIds.length
       newProductIds.push(...result.newProductIds)
       priceChanges.push(...result.priceChanges)
+
+      // Intentar obtener logo si no tiene uno
+      if (!brand.logoUrl) {
+        const logoUrl = await fetchBrandLogo(brand.domain, brandId)
+        if (logoUrl) {
+          await prisma.brand.update({ where: { id: brandId }, data: { logoUrl } })
+          log.info({ logoUrl }, "brand logo set")
+        }
+      }
     }
 
     // Actualizar contadores en el scrape job
@@ -441,4 +450,34 @@ async function processShopifyBrand(
   }
 
   return { productsFound, variantsFound, newProductIds, priceChanges }
+}
+
+/**
+ * Intenta obtener un logo para la marca:
+ * 1. Favicon del dominio (Google Favicon Service)
+ * 2. Primer producto de la marca en la DB como fallback
+ */
+async function fetchBrandLogo(domain: string, brandId: string): Promise<string | null> {
+  // Opción 1: usar Google Favicon service (siempre funciona, alta calidad)
+  const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
+  try {
+    const res = await fetch(faviconUrl, { method: "HEAD" })
+    if (res.ok) return faviconUrl
+  } catch {
+    // Silenciar — fallback a producto
+  }
+
+  // Opción 2: usar imagen del primer producto
+  try {
+    const product = await prisma.product.findFirst({
+      where: { brandId, imageUrl: { not: null } },
+      select: { imageUrl: true },
+      orderBy: { firstSeenAt: "asc" },
+    })
+    if (product?.imageUrl) return product.imageUrl
+  } catch {
+    // Silenciar
+  }
+
+  return null
 }

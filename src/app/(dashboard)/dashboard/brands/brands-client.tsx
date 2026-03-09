@@ -227,13 +227,35 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
           </p>
         </div>
 
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              Agregar marca
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={async () => {
+              try {
+                const res = await fetch("/api/brands/scrape-all", { method: "POST" })
+                if (res.ok) {
+                  toast.info("Scraping iniciado para todas las marcas...")
+                  router.refresh()
+                } else {
+                  toast.error("Error al iniciar scraping masivo")
+                }
+              } catch {
+                toast.error("Error de conexión")
+              }
+            }}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Sync todas
+          </Button>
+
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Agregar marca
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Agregar marca</DialogTitle>
@@ -321,6 +343,7 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Search */}
@@ -375,9 +398,17 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
                 <CardContent className="pt-5 pb-4 px-5">
                   <div className="flex items-start gap-3">
                     {/* Logo / Initial */}
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-bold uppercase">
-                      {brand.name[0]}
-                    </div>
+                    {brand.logoUrl ? (
+                      <img
+                        src={brand.logoUrl}
+                        alt={brand.name}
+                        className="h-10 w-10 flex-shrink-0 rounded-lg object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-bold uppercase">
+                        {brand.name[0]}
+                      </div>
+                    )}
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">

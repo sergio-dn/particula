@@ -32,9 +32,19 @@ export async function POST(
     },
   })
 
-  // Ejecutar scraping en background
+  // Ejecutar scraping en background con retry
   after(async () => {
-    await scrapeBrand(brand.id)
+    try {
+      const result = await scrapeBrand(brand.id)
+      // Reintentar una vez si falló
+      if (result.status === "FAILED" && result.error?.includes("fetch")) {
+        console.log(`[scrape] retrying ${brand.domain} after fetch failure`)
+        await new Promise((r) => setTimeout(r, 5000))
+        await scrapeBrand(brand.id)
+      }
+    } catch (err) {
+      console.error(`[scrape] unhandled error for ${brand.domain}:`, err)
+    }
   })
 
   return NextResponse.json({ scrapeJobId: scrapeJob.id })
