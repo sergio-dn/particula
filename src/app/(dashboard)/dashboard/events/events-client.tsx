@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -159,6 +160,22 @@ export function EventsClient({ brands, initialEvents, initialPagination }: Props
 
   return (
     <div className="space-y-4">
+      {/* Tab links */}
+      <div className="flex gap-1">
+        <Link
+          href="/dashboard/events"
+          className="text-xs px-3 py-1.5 rounded-full border bg-primary text-primary-foreground border-primary transition-colors"
+        >
+          Eventos
+        </Link>
+        <Link
+          href="/dashboard/events?tab=oos"
+          className="text-xs px-3 py-1.5 rounded-full border hover:bg-muted transition-colors"
+        >
+          Sin stock
+        </Link>
+      </div>
+
       {/* Filter Bar */}
       <div className="flex flex-wrap gap-3 items-center">
         {/* Brand filter */}

@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Building2, CheckCircle2, Circle, Globe, Loader2, Plus, RefreshCw, Search, Trash2, XCircle } from "lucide-react"
+import { Building2, CheckCircle2, Circle, Globe, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -88,6 +88,56 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
   const [addError, setAddError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Brand | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Edit state
+  const [editTarget, setEditTarget] = useState<Brand | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    name: "",
+    country: "",
+    category: "COMPETITOR",
+    isMyBrand: false,
+    notes: "",
+  })
+
+  function openEditDialog(brand: Brand) {
+    setEditForm({
+      name: brand.name,
+      country: brand.country ?? "",
+      category: brand.category,
+      isMyBrand: brand.isMyBrand,
+      notes: brand.notes ?? "",
+    })
+    setEditTarget(brand)
+  }
+
+  async function handleEditBrand(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editTarget) return
+    setIsEditing(true)
+
+    try {
+      const res = await fetch(`/api/brands/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        toast.error(data.error ?? "Error al actualizar la marca")
+        return
+      }
+
+      setEditTarget(null)
+      toast.success("Marca actualizada")
+      router.refresh()
+    } catch {
+      toast.error("Error de conexión")
+    } finally {
+      setIsEditing(false)
+    }
+  }
 
   // Form state
   const [form, setForm] = useState({
@@ -409,6 +459,15 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
                     <Button
                       size="sm"
                       variant="outline"
+                      className="h-7 text-xs gap-1.5"
+                      onClick={() => openEditDialog(brand)}
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Editar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       className="h-7 text-xs text-destructive hover:text-destructive gap-1.5 ml-auto"
                       onClick={() => setDeleteTarget(brand)}
                     >
@@ -450,6 +509,99 @@ export function BrandsClient({ brands: initialBrands }: { brands: Brand[] }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Edit brand dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar {editTarget?.name}</DialogTitle>
+            <DialogDescription>
+              Actualiza los datos de la marca. El dominio no se puede cambiar.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditBrand} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Nombre de la marca</label>
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">País</label>
+                <Input
+                  placeholder="US"
+                  maxLength={2}
+                  value={editForm.country}
+                  onChange={(e) => setEditForm((f) => ({ ...f, country: e.target.value.toUpperCase() }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Categoría</label>
+                <Select
+                  value={editForm.category}
+                  onValueChange={(v) => setEditForm((f) => ({ ...f, category: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(categoryLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Notas</label>
+              <textarea
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[60px] resize-none"
+                placeholder="Notas internas sobre esta marca..."
+                value={editForm.notes}
+                onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="edit-is-my-brand"
+                checked={editForm.isMyBrand}
+                onChange={(e) => setEditForm((f) => ({ ...f, isMyBrand: e.target.checked }))}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <label htmlFor="edit-is-my-brand" className="text-sm font-medium">
+                Es mi marca
+              </label>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditTarget(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isEditing}>
+                {isEditing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Guardando...
+                  </>
+                ) : (
+                  "Guardar"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { EventsClient } from "./events-client"
+import { OosTimeline } from "./oos-timeline"
 
 interface SearchParams {
   brandId?: string
@@ -7,6 +8,7 @@ interface SearchParams {
   isRead?: string
   days?: string
   page?: string
+  tab?: string
 }
 
 async function getBrands() {
@@ -70,15 +72,76 @@ async function getInitialEvents(sp: SearchParams) {
   }
 }
 
+async function getOosVariants(brandId?: string) {
+  const variants = await prisma.variant.findMany({
+    where: {
+      isAvailable: false,
+      product: {
+        isActive: true,
+        ...(brandId ? { brandId } : {}),
+      },
+    },
+    include: {
+      product: {
+        select: {
+          title: true,
+          imageUrl: true,
+          productType: true,
+          brand: { select: { id: true, name: true, currency: true } },
+        },
+      },
+      inventorySnapshots: {
+        orderBy: { snapshotAt: "desc" },
+        take: 50,
+      },
+    },
+    take: 200,
+  })
+
+  const items = variants.map((v) => {
+    const lastAvailable = v.inventorySnapshots.find((s) => s.isAvailable)
+    const oosStart = lastAvailable
+      ? lastAvailable.snapshotAt
+      : v.inventorySnapshots.length > 0
+        ? v.inventorySnapshots[v.inventorySnapshots.length - 1].snapshotAt
+        : new Date()
+
+    const daysSinceOOS = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(oosStart).getTime()) / (1000 * 60 * 60 * 24))
+    )
+
+    return {
+      variantId: v.id,
+      variantTitle: v.title,
+      sku: v.sku,
+      price: String(v.price),
+      productTitle: v.product.title,
+      imageUrl: v.product.imageUrl,
+      productType: v.product.productType,
+      brandId: v.product.brand.id,
+      brandName: v.product.brand.name,
+      currency: v.product.brand.currency,
+      oosDate: new Date(oosStart).toISOString(),
+      daysSinceOOS,
+    }
+  })
+
+  items.sort((a, b) => b.daysSinceOOS - a.daysSinceOOS)
+  return items
+}
+
 export default async function EventsPage({
   searchParams,
 }: {
   searchParams: Promise<SearchParams>
 }) {
   const sp = await searchParams
-  const [brands, initialData] = await Promise.all([
+  const tab = sp.tab ?? "events"
+  const [brands, initialData, oosItems] = await Promise.all([
     getBrands(),
     getInitialEvents(sp),
+    tab === "oos" ? getOosVariants(sp.brandId) : Promise.resolve([]),
   ])
 
   return (
@@ -89,11 +152,16 @@ export default async function EventsPage({
           Alertas, cambios de precio, restocks y actividad reciente
         </p>
       </div>
-      <EventsClient
-        brands={brands}
-        initialEvents={initialData.items}
-        initialPagination={initialData.pagination}
-      />
+
+      {tab === "oos" ? (
+        <OosTimeline items={JSON.parse(JSON.stringify(oosItems))} brands={brands} />
+      ) : (
+        <EventsClient
+          brands={brands}
+          initialEvents={initialData.items}
+          initialPagination={initialData.pagination}
+        />
+      )}
     </div>
   )
 }

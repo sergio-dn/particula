@@ -87,7 +87,7 @@ export function AppSidebar({ role }: { role?: string }) {
             <defs>
               <linearGradient id="particula-grad" x1="3" y1="3" x2="29" y2="29" gradientUnits="userSpaceOnUse">
                 <stop stopColor="#6366f1" />
-                <stop offset="1" stopColor="#10b981" />
+                <stop offset="1" stopColor="#818cf8" />
               </linearGradient>
             </defs>
           </svg>
