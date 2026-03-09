@@ -32,13 +32,13 @@ const CURRENCY_LOCALE: Record<string, string> = {
  */
 export function formatPrice(
   value: unknown,
-  currency = "USD",
+  currency?: string | null,
 ): string {
   if (value == null) return "—"
   const num = Number(value)
   if (isNaN(num)) return "—"
 
-  const code = currency.toUpperCase()
+  const code = (currency ?? "USD").toUpperCase()
   const locale = CURRENCY_LOCALE[code] ?? "en-US"
 
   // Monedas sin centavos (ej. CLP, COP, KRW, JPY)

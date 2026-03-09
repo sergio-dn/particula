@@ -162,7 +162,12 @@ export async function scrapeBrand(brandId: string): Promise<ScrapeResult> {
         .filter((id): id is string => id !== undefined),
       removedProductIds: removedEvents.map((e) => e.productId),
     }
-    const alertEventIds = await evaluateAlerts(scrapeResults)
+    let alertEventIds: string[] = []
+    try {
+      alertEventIds = await evaluateAlerts(scrapeResults)
+    } catch (e) {
+      log.error({ err: e }, "alert evaluation failed — continuing scrape")
+    }
 
     // Dispatch email/webhook notifications
     await dispatchNotifications(brandId, alertEventIds).catch((e) =>
