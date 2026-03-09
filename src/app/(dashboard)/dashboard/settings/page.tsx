@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { ExchangeRatesClient } from "./exchange-rates-client"
 import { NotificationsClient } from "./notifications-client"
+import { AlertTriangle } from "lucide-react"
 
 async function getExchangeRates() {
   return prisma.exchangeRate.findMany({
@@ -16,11 +17,32 @@ async function getAlertConfigs() {
   })
 }
 
+function ErrorBanner({ section }: { section: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+      <span>No se pudo cargar la sección de {section}. Verifica la conexión a la base de datos.</span>
+    </div>
+  )
+}
+
 export default async function SettingsPage() {
-  const [rates, alerts] = await Promise.all([
-    getExchangeRates(),
-    getAlertConfigs(),
-  ])
+  let rates: Awaited<ReturnType<typeof getExchangeRates>> = []
+  let alerts: Awaited<ReturnType<typeof getAlertConfigs>> = []
+  let ratesError = false
+  let alertsError = false
+
+  try {
+    rates = await getExchangeRates()
+  } catch {
+    ratesError = true
+  }
+
+  try {
+    alerts = await getAlertConfigs()
+  } catch {
+    alertsError = true
+  }
 
   return (
     <div className="space-y-6">
@@ -31,9 +53,17 @@ export default async function SettingsPage() {
         </p>
       </div>
 
-      <ExchangeRatesClient rates={JSON.parse(JSON.stringify(rates))} />
+      {ratesError ? (
+        <ErrorBanner section="tipos de cambio" />
+      ) : (
+        <ExchangeRatesClient rates={JSON.parse(JSON.stringify(rates))} />
+      )}
 
-      <NotificationsClient alerts={JSON.parse(JSON.stringify(alerts))} />
+      {alertsError ? (
+        <ErrorBanner section="notificaciones" />
+      ) : (
+        <NotificationsClient alerts={JSON.parse(JSON.stringify(alerts))} />
+      )}
     </div>
   )
 }
