@@ -12,6 +12,7 @@ import type {
   NormalizedPrice,
   ProductURL,
 } from "./adapter"
+import { scraperLogger } from "@/lib/logger"
 
 export interface ShopifyVariant {
   id: number
@@ -47,6 +48,23 @@ export interface ShopifyProductsResponse {
 
 const PAGE_SIZE = 250
 const REQUEST_DELAY_MS = 500
+const MAX_RETRIES = 3
+
+// User-Agent rotation para evitar bloqueos (#30)
+const USER_AGENTS = [
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+]
+
+let uaIndex = 0
+function getNextUA(): string {
+  const ua = USER_AGENTS[uaIndex % USER_AGENTS.length]
+  uaIndex++
+  return ua
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -60,7 +78,7 @@ export async function detectShopifyStore(domain: string): Promise<boolean> {
   const url = `https://${domain}/products.json?limit=1`
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Particula/1.0)" },
+      headers: { "User-Agent": getNextUA() },
       signal: AbortSignal.timeout(10_000),
     })
     if (!res.ok) return false
@@ -79,37 +97,70 @@ export async function fetchAllShopifyProducts(
   domain: string,
   onProgress?: (count: number) => void
 ): Promise<ShopifyProduct[]> {
+  const log = scraperLogger.child({ domain })
   const all: ShopifyProduct[] = []
   let page = 1
 
   while (true) {
     const url = `https://${domain}/products.json?limit=${PAGE_SIZE}&page=${page}`
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Particula/1.0)" },
-      signal: AbortSignal.timeout(30_000),
-    })
+    let lastError: Error | null = null
+    let success = false
 
-    if (!res.ok) {
-      if (res.status === 429) {
-        // Rate limited — esperar más tiempo
-        await sleep(5_000)
-        continue
+    // Retry con exponential backoff (#30)
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const res = await fetch(url, {
+          headers: { "User-Agent": getNextUA() },
+          signal: AbortSignal.timeout(30_000),
+        })
+
+        if (res.status === 429) {
+          // Rate limited — backoff exponencial
+          const backoffMs = 2_000 * Math.pow(2, attempt) // 2s, 4s, 8s
+          log.warn({ page, attempt: attempt + 1, backoffMs }, "rate limited, backing off")
+          await sleep(backoffMs)
+          continue
+        }
+
+        // Detectar Cloudflare challenge (HTML en vez de JSON)
+        const contentType = res.headers.get("content-type") ?? ""
+        if ((res.status === 403 || res.status === 503) || (res.ok && contentType.includes("text/html"))) {
+          const backoffMs = 3_000 * Math.pow(2, attempt)
+          log.warn({ page, status: res.status, attempt: attempt + 1 }, "possible WAF block, backing off")
+          await sleep(backoffMs)
+          continue
+        }
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} fetching ${url}`)
+        }
+
+        const data: ShopifyProductsResponse = await res.json()
+        const products = data.products ?? []
+
+        all.push(...products)
+        onProgress?.(all.length)
+        success = true
+
+        if (products.length < PAGE_SIZE) return all // Last page
+        break // Go to next page
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err))
+        if (attempt < MAX_RETRIES - 1) {
+          const backoffMs = 1_000 * Math.pow(2, attempt)
+          log.warn({ page, attempt: attempt + 1, error: lastError.message }, "fetch failed, retrying")
+          await sleep(backoffMs)
+        }
       }
-      throw new Error(`HTTP ${res.status} fetching ${url}`)
     }
 
-    const data: ShopifyProductsResponse = await res.json()
-    const products = data.products ?? []
+    if (!success) {
+      throw lastError ?? new Error(`Failed to fetch page ${page} after ${MAX_RETRIES} attempts`)
+    }
 
-    all.push(...products)
-    onProgress?.(all.length)
-
-    if (products.length < PAGE_SIZE) break
     page++
     await sleep(REQUEST_DELAY_MS)
   }
-
-  return all
 }
 
 // ─── Mapping helpers ────────────────────────────────────────────

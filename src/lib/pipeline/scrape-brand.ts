@@ -397,6 +397,19 @@ async function processShopifyBrand(
     pipelineLogger.info({ domain, availableVariants: probeVariants.filter((v) => v.isAvailable).length }, "running cart probes")
     const probeResult = await batchProbeInventory(domain, probeVariants)
 
+    // Si la tienda bloqueó consistentemente, resetear inventoryTracking
+    // para reintentar detección en el próximo ciclo (#30)
+    if (probeResult.tracksInventory === null) {
+      pipelineLogger.warn(
+        { domain, brandId },
+        "persistent blocks detected — resetting inventoryTracking for next cycle",
+      )
+      await prisma.brand.update({
+        where: { id: brandId },
+        data: { inventoryTracking: null },
+      })
+    }
+
     // Actualizar snapshots con datos reales del cart probe
     let probesApplied = 0
     for (const result of probeResult.results) {

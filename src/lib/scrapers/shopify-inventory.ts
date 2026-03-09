@@ -8,7 +8,17 @@
  *
  * Si la tienda no trackea inventario, acepta 999999 sin limitarlo.
  * Si tiene Cloudflare u otra protección, retorna "blocked".
+ *
+ * Anti-bot mitigations (#30):
+ *   - Retry con exponential backoff (hasta 3 intentos)
+ *   - Rotación de User-Agent strings realistas
+ *   - Detección de Cloudflare challenges (HTML en vez de JSON)
+ *   - Persistent blocks → resetea inventoryTracking para reintentar en próximo ciclo
  */
+
+import { scraperLogger } from "@/lib/logger"
+
+const log = scraperLogger.child({ module: "cart-probe" })
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -64,14 +74,26 @@ const PROBE_QTY = 999_999
 const REQUEST_DELAY_MS = 500
 const REQUEST_TIMEOUT_MS = 10_000
 const MAX_VARIANTS_PER_BRAND = 30
+const MAX_RETRIES = 3
+const BASE_BACKOFF_MS = 1_000 // 1s, 2s, 4s exponential
 
 const USER_AGENTS = [
+  // Chrome 124 – macOS
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  // Chrome 124 – Windows
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  // Safari 17.4 – macOS
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+  // Firefox 125 – Windows
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+  // Chrome 124 – Linux
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  // Edge 123 – Windows
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0",
+  // Chrome 125 – macOS (newer)
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  // Safari 17.5 – macOS
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
 ]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -99,12 +121,42 @@ function extractCookies(res: Response): string {
     .join("; ")
 }
 
+/**
+ * Detecta si una respuesta es un bloqueo de Cloudflare u otro WAF.
+ * Ahora también detecta challenge pages (HTML en vez de JSON).
+ */
 function isCloudflareBlocked(res: Response): boolean {
+  // Status codes típicos de WAF
   if (res.status === 403 || res.status === 503) {
-    const server = res.headers.get("server") ?? ""
-    if (server.toLowerCase().includes("cloudflare")) return true
-    // Algunos stores devuelven 403 sin header cloudflare pero siguen siendo WAF
+    const server = (res.headers.get("server") ?? "").toLowerCase()
+    if (server.includes("cloudflare")) return true
+    // Muchos stores devuelven 403 sin header cloudflare pero siguen siendo WAF
     return true
+  }
+  return false
+}
+
+/**
+ * Detecta si la respuesta es un challenge HTML en vez de JSON.
+ * Cloudflare a veces devuelve 200 con HTML challenge page.
+ */
+async function isHtmlChallenge(res: Response): Promise<boolean> {
+  const contentType = res.headers.get("content-type") ?? ""
+  if (contentType.includes("text/html")) {
+    // Leer un fragmento del body para confirmar
+    try {
+      const text = await res.clone().text()
+      const lower = text.toLowerCase()
+      return (
+        lower.includes("cloudflare") ||
+        lower.includes("challenge-platform") ||
+        lower.includes("cf-browser-verification") ||
+        lower.includes("just a moment") ||
+        lower.includes("ray id")
+      )
+    } catch {
+      return true // Si no podemos leer, asumir que es challenge
+    }
   }
   return false
 }
@@ -121,7 +173,7 @@ async function clearCart(baseUrl: string, ua: string, cookies: string): Promise<
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
   } catch {
-    console.warn(`[cart-probe] Failed to clear cart for ${baseUrl}`)
+    log.debug({ domain: baseUrl }, "failed to clear cart")
   }
 }
 
@@ -135,11 +187,11 @@ async function clearCart(baseUrl: string, ua: string, cookies: string): Promise<
  *   2. GET /cart.js — leer la cantidad que Shopify aceptó
  *   3. POST /cart/clear.js — limpiar carrito
  */
-export async function probeVariantInventory(
+async function probeVariantOnce(
   domain: string,
   variantId: number,
+  ua: string,
 ): Promise<ProbeResult> {
-  const ua = getNextUserAgent()
   const baseHeaders = {
     "User-Agent": ua,
     "Content-Type": "application/json",
@@ -170,12 +222,17 @@ export async function probeVariantInventory(
     if (isCloudflareBlocked(addRes)) {
       return { variantId, status: "blocked", quantity: null, httpStatus: addRes.status }
     }
+
+    // Detectar challenge HTML (Cloudflare 200 con HTML)
+    if (await isHtmlChallenge(addRes)) {
+      return { variantId, status: "blocked", quantity: null, httpStatus: addRes.status }
+    }
+
     if (!addRes.ok) {
       return { variantId, status: "error", quantity: null, httpStatus: addRes.status }
     }
 
     // Estrategia primaria: leer quantity del response de /cart/add.js
-    // Shopify devuelve la cantidad realmente añadida (limitada al stock si trackea)
     let addedQty: number | null = null
     try {
       const addBody: CartAddResponse = await addRes.json()
@@ -242,6 +299,47 @@ export async function probeVariantInventory(
   }
 }
 
+/**
+ * Probe con retry y exponential backoff.
+ * Reintenta solo en "blocked" y "timeout" — no en "error", "exact", "no_tracking".
+ */
+export async function probeVariantInventory(
+  domain: string,
+  variantId: number,
+): Promise<ProbeResult> {
+  let lastResult: ProbeResult | null = null
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    // Usar un UA diferente en cada intento
+    const ua = getNextUserAgent()
+    const result = await probeVariantOnce(domain, variantId, ua)
+
+    // Si obtuvimos resultado definitivo, retornar inmediatamente
+    if (result.status === "exact" || result.status === "no_tracking" || result.status === "error") {
+      return result
+    }
+
+    lastResult = result
+
+    // Solo reintentar en "blocked" o "timeout"
+    if (attempt < MAX_RETRIES - 1) {
+      const backoffMs = BASE_BACKOFF_MS * Math.pow(2, attempt) // 1s, 2s, 4s
+      log.debug(
+        { domain, variantId, attempt: attempt + 1, status: result.status, backoffMs },
+        "retrying probe after backoff",
+      )
+      await sleep(backoffMs)
+    }
+  }
+
+  // Agotamos los retries
+  log.warn(
+    { domain, variantId, attempts: MAX_RETRIES, lastStatus: lastResult?.status },
+    "probe exhausted retries",
+  )
+  return lastResult ?? { variantId, status: "error", quantity: null }
+}
+
 // ─── Detection: Does the store track inventory? ──────────────────────────────
 
 /**
@@ -261,6 +359,12 @@ export async function detectInventoryTracking(
     })
 
     if (!res.ok) {
+      return { tracksInventory: false, testedVariantId: null }
+    }
+
+    // Detectar challenge HTML en la respuesta de products.json
+    if (await isHtmlChallenge(res)) {
+      log.warn({ domain }, "products.json returned HTML challenge")
       return { tracksInventory: false, testedVariantId: null }
     }
 
@@ -309,7 +413,9 @@ export async function detectInventoryTracking(
  *   2. Ordenadas por price descendente (mayor valor primero)
  *   3. Máximo 30 variantes por batch
  *
- * Early abort: si el primer resultado es "blocked", aborta el batch completo.
+ * Early abort: si los primeros N resultados son todos "blocked", aborta el batch.
+ * Persistent block: si todos los probes son "blocked", marca tracksInventory = null
+ * para que el pipeline resetee el flag y reintente en el próximo ciclo.
  */
 export async function batchProbeInventory(
   domain: string,
@@ -323,17 +429,25 @@ export async function batchProbeInventory(
 
   const skipped = Math.max(0, variants.filter((v) => v.isAvailable).length - MAX_VARIANTS_PER_BRAND)
   const results: ProbeResult[] = []
+  let consecutiveBlocks = 0
+  const BLOCK_ABORT_THRESHOLD = 3 // Abortar después de 3 bloqueos consecutivos
 
   for (const variant of prioritized) {
     const result = await probeVariantInventory(domain, Number(variant.externalId))
     results.push(result)
 
-    // Early abort si estamos bloqueados
+    // Contar bloqueos consecutivos para early abort
     if (result.status === "blocked") {
-      console.warn(
-        `[cart-probe] ${domain}: blocked after ${results.length} probe(s), aborting batch`,
-      )
-      break
+      consecutiveBlocks++
+      if (consecutiveBlocks >= BLOCK_ABORT_THRESHOLD) {
+        log.warn(
+          { domain, consecutiveBlocks, totalProbed: results.length },
+          "aborting batch due to persistent blocks",
+        )
+        break
+      }
+    } else {
+      consecutiveBlocks = 0 // Resetear si un probe pasa
     }
 
     await sleep(REQUEST_DELAY_MS)
@@ -342,12 +456,25 @@ export async function batchProbeInventory(
   // Derivar si la tienda trackea inventario
   const hasExact = results.some((r) => r.status === "exact")
   const hasNoTracking = results.some((r) => r.status === "no_tracking")
-  const allBlocked = results.length > 0 && results.every((r) => r.status === "blocked")
+  const allBlocked = results.length > 0 && results.every((r) => r.status === "blocked" || r.status === "timeout")
 
   let tracksInventory: boolean | null = null
   if (hasExact) tracksInventory = true
   else if (hasNoTracking && !hasExact) tracksInventory = false
-  else if (allBlocked) tracksInventory = null // inconcluso
+  else if (allBlocked) tracksInventory = null // inconcluso — pipeline debe resetear
+
+  log.info(
+    {
+      domain,
+      probed: results.length,
+      skipped,
+      exact: results.filter((r) => r.status === "exact").length,
+      blocked: results.filter((r) => r.status === "blocked").length,
+      timeout: results.filter((r) => r.status === "timeout").length,
+      tracksInventory,
+    },
+    "batch probe complete",
+  )
 
   return {
     domain,
