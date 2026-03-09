@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  db:
+    extends:
+      file: docker-compose.yml
+      service: db
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps
+    command: sh -c "npx prisma generate && npx prisma db push && npm run dev"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://particula:particula_dev@db:5432/particula?schema=public"
+      DIRECT_URL: "postgresql://particula:particula_dev@db:5432/particula?schema=public"
+      NEXTAUTH_SECRET: "dev-secret-change-in-production"
+      NEXTAUTH_URL: "http://localhost:3000"
+      NODE_ENV: development
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

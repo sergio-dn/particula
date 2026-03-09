@@ -1,36 +1,125 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Particula
 
-## Getting Started
+**Plataforma de inteligencia competitiva para marcas D2C.**
 
-First, run the development server:
+## Que es
+
+Particula recopila datos publicos de tiendas online (Shopify, WooCommerce y sitios genericos) para producir inteligencia comercial accionable. Detecta eventos comerciales, estima ventas por variante y califica productos ganadores mediante un sistema de scoring multifactor. Todo accesible desde un dashboard y una API REST documentada.
+
+## Stack tecnologico
+
+- **Framework**: Next.js 15 (App Router) + TypeScript
+- **ORM / DB**: Prisma + PostgreSQL (Supabase)
+- **UI**: Tailwind CSS + shadcn/ui + Recharts
+- **Auth**: next-auth v5
+- **Scraping**: API nativa Shopify + Cheerio + Playwright (sitios genericos)
+- **Notificaciones**: Resend (email) + Webhooks
+- **API docs**: Swagger (swagger-jsdoc + swagger-ui-react)
+- **Validacion**: Zod
+- **Logs**: Pino
+
+## Funcionalidades
+
+- **Scraping multiplataforma** — Shopify, WooCommerce y extractor generico con Playwright
+- **Deteccion de plataforma** — Identificacion automatica con confidence scoring
+- **Snapshots diarios** — Precio, disponibilidad e inventario append-only
+- **Cart probe** — Inventario exacto via cart API de Shopify
+- **11 tipos de evento comercial** — PRODUCT_LAUNCH, PRICE_CHANGE, DISCOUNT_START, RESTOCK, OUT_OF_STOCK, etc.
+- **Estimacion de ventas** — 3 tiers de confianza (A: cart probe, B: available delta, C: catalogo)
+- **Winner scoring** — 6 factores: velocidad de ventas, restocks, stockouts, longevidad, estabilidad de precio, prominencia
+- **10 tipos de alerta** — Con notificaciones por email y webhook
+- **Export CSV** — Descarga de datos para analisis externo
+- **Control de acceso** — Roles Admin, Editor y Viewer
+- **Multi-moneda** — Conversion automatica con tasas de cambio
+- **API REST** — Documentada con Swagger en `/api/docs`
+
+## Requisitos
+
+- Node.js 20+
+- PostgreSQL 16+
+- npm
+
+## Instalacion
 
 ```bash
+git clone <repo-url>
+cd particula
+npm install
+cp .env.example .env   # Editar con tus valores
+npx prisma generate
+npx prisma db push
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La aplicacion estara disponible en `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Docker
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+docker-compose up -d
+```
 
-## Learn More
+## Variables de entorno
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Descripcion | Requerida |
+|---|---|---|
+| `DATABASE_URL` | URL de conexion a PostgreSQL (pooler) | Si |
+| `DIRECT_URL` | URL directa a PostgreSQL (sin pooler, para migraciones) | Si |
+| `NEXTAUTH_SECRET` | Secret para firmar tokens de sesion | Si |
+| `NEXTAUTH_URL` | URL base de la aplicacion (ej. `http://localhost:3000`) | Si |
+| `RESEND_API_KEY` | API key de Resend para envio de emails | No |
+| `PROXY_URL` | URL del proxy para scraping (ej. `http://user:pass@proxy:port`) | No |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Estructura del proyecto
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+particula/
+├── prisma/
+│   └── schema.prisma          # Fuente de verdad del schema
+├── src/
+│   ├── app/
+│   │   ├── (dashboard)/       # Paginas del dashboard
+│   │   ├── api/               # API routes
+│   │   │   ├── brands/        # CRUD de competidores
+│   │   │   ├── alerts/        # Gestion de alertas
+│   │   │   ├── events/        # Consulta de eventos
+│   │   │   ├── sales/         # Estimaciones de ventas
+│   │   │   ├── winners/       # Ranking de ganadores
+│   │   │   ├── export/        # Export CSV
+│   │   │   ├── exchange-rates/# Tasas de cambio
+│   │   │   ├── cron/          # Trigger de scraping programado
+│   │   │   └── docs/          # Swagger UI
+│   │   └── login/             # Pagina de login
+│   ├── components/            # Componentes React reutilizables
+│   └── lib/
+│       ├── scrapers/          # Fetchers por plataforma + cart probe
+│       ├── pipeline/          # Orquestador de scraping, diffing, alertas
+│       ├── estimators/        # Ventas (3 tiers) + winner score (6 factores)
+│       ├── detectors/         # Deteccion de plataforma
+│       ├── exchange/          # Conversion de monedas
+│       └── notifications/     # Email y webhook
+└── package.json
+```
 
-## Deploy on Vercel
+## API
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+La documentacion interactiva de la API esta disponible en `/api/docs` (Swagger UI).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Endpoints principales: `/api/brands`, `/api/events`, `/api/sales`, `/api/winners`, `/api/alerts`, `/api/export`.
+
+## Scripts
+
+| Comando | Descripcion |
+|---|---|
+| `npm run dev` | Servidor de desarrollo |
+| `npm run build` | Build de produccion (incluye type check) |
+| `npm start` | Servidor de produccion |
+| `npm run lint` | Linter |
+| `npm run scrape` | Ejecutar pipeline de scraping manualmente |
+| `npm run db:generate` | Regenerar Prisma Client |
+| `npm run db:push` | Sincronizar schema con la base de datos |
+| `npm run db:studio` | Abrir Prisma Studio |
+
+## Licencia
+
+Privado. Todos los derechos reservados.
