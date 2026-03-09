@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { ExternalLink, Rocket } from "lucide-react"
 import Link from "next/link"
 import { formatPrice } from "@/lib/utils"
+import { CategoryCombobox } from "./category-combobox"
 
 interface SearchParams {
   brandId?: string
@@ -192,31 +193,20 @@ export default async function LaunchesPage({
         </div>
       )}
 
-      {/* Product type filter pills */}
+      {/* Filtro de categoría (combobox con búsqueda) */}
       {productTypes.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={buildUrl({ days: baseDays, country: sp.country, brandId: sp.brandId })}
-            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-              !sp.productType ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"
-            }`}
-          >
-            Todas las categorías
-          </Link>
-          {productTypes.map((pt) => (
-            <Link
-              key={pt}
-              href={buildUrl({ days: baseDays, country: sp.country, brandId: sp.brandId, productType: pt })}
-              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                sp.productType === pt
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "hover:bg-muted"
-              }`}
-            >
-              {pt}
-            </Link>
-          ))}
-        </div>
+        <CategoryCombobox
+          categories={productTypes}
+          selected={sp.productType ?? null}
+          buildUrl={(pt) =>
+            buildUrl({
+              days: baseDays,
+              country: sp.country,
+              brandId: sp.brandId,
+              productType: pt ?? undefined,
+            })
+          }
+        />
       )}
 
       {launches.length === 0 ? (
